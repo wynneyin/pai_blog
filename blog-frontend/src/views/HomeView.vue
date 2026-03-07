@@ -6,6 +6,7 @@ import CategoryTabs from "../components/CategoryTabs.vue";
 import ArticleCard from "../components/ArticleCard.vue";
 import PaginationNav from "../components/PaginationNav.vue";
 import TagCloud from "../components/TagCloud.vue";
+import ProfileSidebar from "../components/ProfileSidebar.vue";
 
 const loading = ref(false);
 const error = ref("");
@@ -105,7 +106,12 @@ onMounted(async () => {
       @change="onCategoryChange"
     />
 
-    <section class="content-grid">
+    <section class="content-grid content-grid--with-profile">
+      <ProfileSidebar
+        :article-count="pagination.total"
+        :category-count="categories.length"
+        :tag-count="tags.length"
+      />
       <div>
         <p v-if="error" class="status status--error">{{ error }}</p>
         <p v-else-if="loading" class="status">加载中...</p>
