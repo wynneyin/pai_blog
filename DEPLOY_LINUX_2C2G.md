@@ -48,6 +48,32 @@ docker --version
 docker compose version
 ```
 
+如果 `docker compose` 提示 `buildx isn't installed`，可先禁用 Bake：
+
+```bash
+echo 'export COMPOSE_BAKE=false' >> ~/.bashrc
+source ~/.bashrc
+```
+
+如果拉取 Docker Hub 超时（`registry-1.docker.io ... i/o timeout`），配置镜像加速：
+
+```bash
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json > /dev/null <<'EOF'
+{
+  "registry-mirrors": [
+    "https://docker.1panel.live",
+    "https://docker.m.daocloud.io",
+    "https://hub-mirror.c.163.com",
+    "https://mirror.ccs.tencentyun.com"
+  ]
+}
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+docker info | grep -A 5 "Registry Mirrors"
+```
+
 ## 4. 上传项目并配置生产环境
 
 ```bash
