@@ -1,0 +1,5 @@
+blog-frontend/node_modules/
+blog-frontend/dist/
+blog-backend/target/
+.DS_Store
+**/.DS_Store

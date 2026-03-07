@@ -1,0 +1,25 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: blog-backend
+
+  cache:
+    type: simple
+
+# 文章配置
+articles:
+  path: ${user.dir}/articles
+  encoding: UTF-8
+
+blog:
+  admin-token: ${BLOG_ADMIN_TOKEN:}
+  cors:
+    allowed-origins: ${BLOG_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}
+
+# 日志配置
+logging:
+  level:
+    com.blog: DEBUG
+    org.springframework.web: INFO

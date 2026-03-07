@@ -1,0 +1,111 @@
+# Personal Blog (前后端分离)
+
+基于主流 Java 技术栈实现的个人博客，支持分类、标签、分页、搜索、Markdown 发文和 Docker 上线。
+
+## 技术栈
+
+- 后端: Spring Boot 3.2 + Java 17
+- 前端: Vue 3 + Vite + Vue Router + Axios
+- 内容存储: 本地 Markdown 文件（`articles/`）
+- 部署: Docker + Docker Compose + Nginx
+
+## 功能
+
+- 文章列表分页
+- 分类筛选（如生活、技术、随笔）
+- 标签筛选
+- 关键字搜索
+- 文章详情页（Markdown -> HTML）
+- 快速发文脚本（自动生成 front matter）
+- 容器化部署
+
+## 项目结构
+
+```text
+.
+├── articles/                # Markdown 文章目录
+├── blog-backend/            # Spring Boot API
+├── blog-frontend/           # Vue 前端
+├── scripts/new-post.sh      # 快速新建文章脚本
+└── docker-compose.yml       # 一键上线编排
+```
+
+## 本地开发
+
+### 1) 启动后端
+
+```bash
+cd blog-backend
+mvn spring-boot:run
+```
+
+默认端口: `http://localhost:8080`
+
+### 2) 启动前端
+
+```bash
+cd blog-frontend
+npm install
+npm run dev
+```
+
+默认端口: `http://localhost:5173`
+
+## 快速发文
+
+```bash
+./scripts/new-post.sh 技术 "Spring Boot 缓存实践" spring-boot-cache-practice
+```
+
+生成后的文件在 `articles/technology/` 下，保存后刷新页面即可看到更新。
+
+你也可以直接手动新增 `.md` 文件，后端会根据文件变化自动重新加载缓存。
+
+## Markdown front matter 规范
+
+```yaml
+---
+title: "文章标题"
+slug: "article-slug"
+category: "技术"
+tags: [Java, SpringBoot]
+author: "Wynne"
+date: "2026-03-06 10:00:00"
+summary: "一句话摘要"
+published: true
+---
+```
+
+## API 概览
+
+- `GET /api/articles?page=1&pageSize=10`
+- `GET /api/articles?category=技术&page=1&pageSize=10`
+- `GET /api/articles?tag=Java&page=1&pageSize=10`
+- `GET /api/articles?keyword=Spring&page=1&pageSize=10`
+- `GET /api/articles/{slug}`
+- `GET /api/categories`
+- `GET /api/tags`
+- `POST /api/admin/cache/refresh`（可选 `X-Admin-Token`）
+
+## Docker 上线
+
+```bash
+docker compose up -d --build
+```
+
+启动后:
+
+- 前端: `http://<你的服务器IP>/`
+- 后端: `http://<你的服务器IP>:8080/api/articles`
+
+文章目录通过 volume 挂载，修改 `articles/` 下 Markdown 文件即可快速更新内容。
+
+## 常用环境变量
+
+- `ARTICLES_PATH` 文章目录（容器内默认 `/app/articles`）
+- `BLOG_ADMIN_TOKEN` 管理刷新接口的 token（可选）
+- `BLOG_CORS_ALLOWED_ORIGINS` 允许跨域来源
+
+## 生产部署文档（2核2G）
+
+见 [DEPLOY_LINUX_2C2G.md](./DEPLOY_LINUX_2C2G.md)。
