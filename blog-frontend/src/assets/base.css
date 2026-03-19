@@ -46,55 +46,25 @@ a {
   border-radius: 24px;
   background: rgba(255, 253, 250, 0.84);
   box-shadow: var(--shadow);
-  padding: 36px;
+  padding: 18px 20px;
   backdrop-filter: blur(8px);
   animation: fade-in 0.6s ease;
 }
 
-.hero__badge {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-family: "Space Grotesk", sans-serif;
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--brand);
-  background: rgba(180, 83, 9, 0.12);
-}
-
-.hero h1 {
-  margin: 14px 0 8px;
-  font-size: clamp(30px, 5vw, 44px);
-}
-
-.hero p {
-  margin: 0;
-  color: var(--muted);
-}
-
 .hero__search {
-  margin-top: 22px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
+  justify-content: center;
 }
 
 .hero__search input {
-  flex: 1;
-  min-width: 220px;
+  width: min(360px, 100%);
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #fff;
   padding: 10px 12px;
   font-size: 14px;
   outline: none;
-}
-
-.hero__search span {
-  color: var(--muted);
-  font-family: "Space Grotesk", sans-serif;
 }
 
 .tabs {
@@ -127,7 +97,7 @@ a {
 }
 
 .content-grid--with-profile {
-  grid-template-columns: 260px minmax(0, 1fr) 280px;
+  grid-template-columns: 260px minmax(0, 1fr);
   align-items: start;
 }
 
@@ -146,6 +116,7 @@ a {
   height: 92px;
   border-radius: 50%;
   display: block;
+  object-fit: cover;
 }
 
 .profile h3 {
@@ -209,6 +180,10 @@ a {
   padding: 8px 0;
   background: #fff;
   font-size: 13px;
+}
+
+.profile__tags {
+  margin-top: 14px;
 }
 
 .card-grid {
@@ -278,6 +253,10 @@ a {
   border-radius: 10px;
   padding: 8px 12px;
   cursor: pointer;
+}
+
+.tags__item {
+  font-size: 12px;
 }
 
 .tags {

@@ -1,4 +1,6 @@
 <script setup>
+import TagCloud from "./TagCloud.vue";
+
 defineProps({
   articleCount: {
     type: Number,
@@ -11,13 +13,33 @@ defineProps({
   tagCount: {
     type: Number,
     default: 0
+  },
+  tags: {
+    type: Array,
+    default: () => []
+  },
+  activeTag: {
+    type: String,
+    default: ""
   }
 });
+
+const emit = defineEmits(["tag-change"]);
+const avatarSrc = "/avatar.jpg";
+
+function onAvatarError(event) {
+  event.target.src = "/avatar.svg";
+}
 </script>
 
 <template>
   <aside class="profile">
-    <img class="profile__avatar" src="/avatar.svg" alt="博主头像" />
+    <img
+      class="profile__avatar"
+      :src="avatarSrc"
+      alt="博主头像"
+      @error="onAvatarError"
+    />
     <h3>Wynne</h3>
     <p class="profile__role">后端开发者 / 内容创作者</p>
     <p class="profile__bio">
@@ -43,5 +65,12 @@ defineProps({
       <a href="mailto:hello@example.com">Email</a>
       <a href="https://github.com" target="_blank" rel="noreferrer">GitHub</a>
     </div>
+
+    <TagCloud
+      class="profile__tags"
+      :tags="tags"
+      :active-tag="activeTag"
+      @change="emit('tag-change', $event)"
+    />
   </aside>
 </template>

@@ -5,7 +5,6 @@ import BlogHero from "../components/BlogHero.vue";
 import CategoryTabs from "../components/CategoryTabs.vue";
 import ArticleCard from "../components/ArticleCard.vue";
 import PaginationNav from "../components/PaginationNav.vue";
-import TagCloud from "../components/TagCloud.vue";
 import ProfileSidebar from "../components/ProfileSidebar.vue";
 
 const loading = ref(false);
@@ -99,7 +98,7 @@ onMounted(async () => {
 
 <template>
   <main class="container">
-    <BlogHero v-model:keyword="keywordInput" :total="pagination.total" />
+    <BlogHero v-model:keyword="keywordInput" />
     <CategoryTabs
       :categories="categories"
       :active-category="query.category"
@@ -111,6 +110,9 @@ onMounted(async () => {
         :article-count="pagination.total"
         :category-count="categories.length"
         :tag-count="tags.length"
+        :tags="tags"
+        :active-tag="query.tag"
+        @tag-change="onTagChange"
       />
       <div>
         <p v-if="error" class="status status--error">{{ error }}</p>
@@ -131,7 +133,6 @@ onMounted(async () => {
           />
         </template>
       </div>
-      <TagCloud :tags="tags" :active-tag="query.tag" @change="onTagChange" />
     </section>
   </main>
 </template>
