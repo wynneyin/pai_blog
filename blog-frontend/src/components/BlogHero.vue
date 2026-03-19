@@ -11,6 +11,7 @@ const emit = defineEmits(["update:keyword"]);
 
 <template>
   <header class="hero">
+    <h1 class="hero__title">生活和技术</h1>
     <div class="hero__search">
       <input
         :value="keyword"

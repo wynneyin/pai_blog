@@ -42,6 +42,9 @@ a {
 }
 
 .hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
   border: 1px solid var(--line);
   border-radius: 24px;
   background: rgba(255, 253, 250, 0.84);
@@ -51,13 +54,21 @@ a {
   animation: fade-in 0.6s ease;
 }
 
+.hero__title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
 .hero__search {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
+  margin-left: auto;
 }
 
 .hero__search input {
-  width: min(360px, 100%);
+  width: min(320px, 100%);
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -353,6 +364,23 @@ a {
 }
 
 @media (max-width: 960px) {
+  .hero {
+    flex-wrap: wrap;
+  }
+
+  .hero__title {
+    font-size: 20px;
+  }
+
+  .hero__search {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .hero__search input {
+    width: 100%;
+  }
+
   .content-grid--with-profile {
     grid-template-columns: 1fr;
   }
