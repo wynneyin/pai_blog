@@ -28,7 +28,7 @@ const emit = defineEmits(["tag-change"]);
 const avatarSrc = "/avatar.jpg";
 
 function onAvatarError(event) {
-  event.target.src = "/avatar.svg";
+  event.target.src = "/avatar.png";
 }
 </script>
 
