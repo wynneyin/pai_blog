@@ -1,4 +1,4 @@
-cat > /opt/blog/pai_blog/auto_git_pull.sh <<'EOF'
+cat > /opt/blog/pai_blog/scripts/auto_pull.sh <<'EOF'
 #!/usr/bin/env bash
 set -u
 
