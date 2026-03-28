@@ -5,8 +5,10 @@ set -u
 REPO_DIR="/opt/blog/pai_blog"
 REMOTE="origin"
 BRANCH="main"
-LOG_FILE="$REPO_DIR/git_pull.log"
+LOG_FILE="/var/log/pai_blog_git_pull.log"
 LOCK_FILE="/tmp/auto_git_pull_pai_blog.lock"
+
+mkdir -p "$(dirname "$LOG_FILE")"
 
 while true; do
   (
@@ -28,3 +30,6 @@ while true; do
   sleep 10
 done
 EOF
+
+sed -i 's/\r$//' /opt/blog/pai_blog/scripts/auto_pull.sh
+chmod +x /opt/blog/pai_blog/scripts/auto_pull.sh
