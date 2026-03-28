@@ -1,3 +1,5 @@
+cd /opt/blog/pai_blog
+
 cat > /opt/blog/pai_blog/scripts/auto_pull.sh <<'EOF'
 #!/usr/bin/env bash
 set -u
@@ -5,10 +7,8 @@ set -u
 REPO_DIR="/opt/blog/pai_blog"
 REMOTE="origin"
 BRANCH="main"
-LOG_FILE="/var/log/pai_blog_git_pull.log"
+LOG_FILE="$REPO_DIR/.git/auto_pull.log"
 LOCK_FILE="/tmp/auto_git_pull_pai_blog.lock"
-
-mkdir -p "$(dirname "$LOG_FILE")"
 
 while true; do
   (
@@ -33,3 +33,8 @@ EOF
 
 sed -i 's/\r$//' /opt/blog/pai_blog/scripts/auto_pull.sh
 chmod +x /opt/blog/pai_blog/scripts/auto_pull.sh
+git add scripts/auto_pull.sh
+git commit -m "add auto pull script"
+nohup /opt/blog/pai_blog/scripts/auto_pull.sh >/dev/null 2>&1 &
+ps -ef | grep auto_pull.sh | grep -v grep
+tail -f /opt/blog/pai_blog/.git/auto_pull.log
