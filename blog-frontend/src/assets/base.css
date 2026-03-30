@@ -314,6 +314,123 @@ a {
   color: var(--brand-2);
 }
 
+.article-page {
+  width: min(1680px, 97vw);
+}
+
+.article-layout {
+  display: grid;
+  gap: 20px;
+  align-items: start;
+}
+
+.article-layout--toc-related {
+  grid-template-columns: 200px minmax(0, 1.5fr) 240px;
+}
+
+.article-layout--toc {
+  grid-template-columns: 200px minmax(0, 1.5fr);
+}
+
+.article-layout--related {
+  grid-template-columns: minmax(0, 1.5fr) 240px;
+}
+
+.article-toc {
+  position: sticky;
+  top: 24px;
+  border: 1px solid var(--line);
+  background: rgba(255, 253, 250, 0.92);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.article-toc h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.article-toc nav {
+  display: grid;
+  gap: 8px;
+}
+
+.article-toc__item {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.article-toc__item--h3 {
+  padding-left: 12px;
+  font-size: 13px;
+}
+
+.article-toc__item--h4 {
+  padding-left: 24px;
+  font-size: 13px;
+}
+
+.article-toc__item:hover {
+  color: var(--brand-2);
+}
+
+.article-related {
+  position: sticky;
+  top: 24px;
+  border: 1px solid var(--line);
+  background: rgba(255, 253, 250, 0.92);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.article-related h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.article-related__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: var(--brand-2);
+  font-size: 12px;
+}
+
+.article-related__list {
+  display: grid;
+  gap: 8px;
+}
+
+.article-related__item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+  transition: border-color 0.2s ease;
+}
+
+.article-related__item:hover {
+  border-color: var(--brand);
+}
+
+.article-related__item p {
+  margin: 0;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.article-related__item small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+}
+
 .article {
   border: 1px solid var(--line);
   border-radius: 24px;
@@ -344,6 +461,12 @@ a {
   margin-top: 30px;
   line-height: 1.8;
   color: #243142;
+}
+
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+  scroll-margin-top: 18px;
 }
 
 .markdown-content pre {
@@ -390,6 +513,15 @@ a {
   }
 
   .profile {
+    position: static;
+  }
+
+  .article-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .article-toc,
+  .article-related {
     position: static;
   }
 }
