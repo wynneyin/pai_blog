@@ -25,14 +25,11 @@ if ! command -v nginx &>/dev/null; then
   apt install -y nginx
 fi
 
-# 3. 编译前端
-log "编译前端..."
-cd "$FRONTEND_DIR"
-npm install --silent
-npm run build
+# 3. 复制前端（dist 已在 git 中，无需编译）
+log "复制前端静态文件..."
 mkdir -p "$DIST_DIR"
-cp -r dist/. "$DIST_DIR/"
-log "前端编译完成 -> $DIST_DIR"
+cp -r "$FRONTEND_DIR/dist/." "$DIST_DIR/"
+log "前端文件就绪 -> $DIST_DIR"
 
 # 4. 安装后端依赖
 log "安装后端依赖..."
