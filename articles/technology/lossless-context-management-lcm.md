@@ -158,3 +158,11 @@ GOTO → 结构化控制流的那个类比真的妙。一个领域的成熟，�
 **论文**: [LCM: Lossless Context Management](https://arxiv.org/abs/2605.04050)  
 **作者**: Clint Ehrlich, Theodore Blackman (Voltropy PBC)  
 **开源实现**: Volt (基于 OpenCode fork)
+
+---
+
+## 相关阅读
+
+- [[storage-is-not-memory-agent-recall]] — 同期论文：从检索角度重新定义 Agent 记忆
+- [[agent-engineering-pitfalls]] — 上下文膨胀是 Agent 工程第一坑，看看还有哪些
+- [[tencent-agent-interview-knowledge]] — 上下文工程在面试中如何考察

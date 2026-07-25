@@ -1,0 +1,3 @@
+file '/Volumes/yin/blog/podcasts/AIagent根本不存在/intro.aac'
+file '/Volumes/yin/blog/podcasts/AIagent根本不存在/sec_01.aac'
+file '/Volumes/yin/blog/podcasts/AIagent根本不存在/outro.aac'

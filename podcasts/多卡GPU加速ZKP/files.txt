@@ -1,0 +1,4 @@
+file '/Volumes/yin/blog/podcasts/多卡GPU加速ZKP/intro.aac'
+file '/Volumes/yin/blog/podcasts/多卡GPU加速ZKP/sec_01.aac'
+file '/Volumes/yin/blog/podcasts/多卡GPU加速ZKP/sec_02.aac'
+file '/Volumes/yin/blog/podcasts/多卡GPU加速ZKP/outro.aac'

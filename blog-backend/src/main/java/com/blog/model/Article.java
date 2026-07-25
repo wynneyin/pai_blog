@@ -26,4 +26,5 @@ public class Article {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private int views;
+    private List<String> outboundLinks; // slugs referenced in body via [[slug]] or /article/slug
 }
