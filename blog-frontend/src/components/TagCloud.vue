@@ -16,7 +16,7 @@ const emit = defineEmits(["change"]);
 <template>
   <aside class="tags">
     <h3>热门标签</h3>
-    <div class="tags__list">
+    <div class="tags__list tags__list--scroll">
       <button
         class="tags__item"
         :class="{ 'tags__item--active': !activeTag }"

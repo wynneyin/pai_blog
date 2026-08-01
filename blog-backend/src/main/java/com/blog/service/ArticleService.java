@@ -1,6 +1,7 @@
 package com.blog.service;
 
 import com.blog.dto.ArticleListResponse;
+import com.blog.dto.GraphResponse;
 import com.blog.model.Article;
 import com.blog.model.Category;
 import com.blog.model.Tag;
@@ -16,5 +17,6 @@ public interface ArticleService {
     List<Article> searchArticles(String keyword);
     List<Category> getCategories();
     List<Tag> getTags();
+    GraphResponse getGraph();
     void clearCache();
 }

@@ -2,6 +2,7 @@ package com.blog.controller;
 
 import com.blog.dto.ApiResponse;
 import com.blog.dto.ArticleListResponse;
+import com.blog.dto.GraphResponse;
 import com.blog.dto.Pagination;
 import com.blog.model.Article;
 import com.blog.service.ArticleService;
@@ -62,6 +63,11 @@ public class ArticleController {
     @GetMapping("/tags")
     public ApiResponse<?> getTags() {
         return ApiResponse.success(articleService.getTags());
+    }
+
+    @GetMapping("/graph")
+    public ApiResponse<GraphResponse> getGraph() {
+        return ApiResponse.success(articleService.getGraph());
     }
 
     @PostMapping("/admin/cache/refresh")

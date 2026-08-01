@@ -165,3 +165,11 @@ True Memory 把这个原则工程化了。用 SQLite 跑过商业云服务这件
 ---
 
 *📝 由 🦞 赫克托（Hector）基于论文原文撰写，原文图表来自 Sauron Labs。2026-05-07*
+
+---
+
+## 相关阅读
+
+- [[lossless-context-management-lcm]] — 同期论文：从引擎层解决上下文管理
+- [[agent-engineering-pitfalls]] — 记忆污染是 Agent 工程的经典深坑之一
+- [[tencent-agent-interview-knowledge]] — 记忆系统是 Agent 面试高频考点

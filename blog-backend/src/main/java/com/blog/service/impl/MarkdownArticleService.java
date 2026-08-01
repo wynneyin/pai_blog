@@ -2,6 +2,9 @@ package com.blog.service.impl;
 
 import com.blog.dto.ArticleFrontMatter;
 import com.blog.dto.ArticleListResponse;
+import com.blog.dto.GraphResponse;
+import com.blog.dto.GraphResponse.GraphLink;
+import com.blog.dto.GraphResponse.GraphNode;
 import com.blog.dto.Pagination;
 import com.blog.model.Article;
 import com.blog.model.Category;
@@ -23,13 +26,18 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -39,6 +47,9 @@ public class MarkdownArticleService implements ArticleService {
 
     private static final int MAX_PAGE_SIZE = 50;
     private static final int SUMMARY_LENGTH = 180;
+    // [[slug]] or /article/slug
+    private static final Pattern WIKILINK_PATTERN = Pattern.compile("\\[\\[([^\\]]+)]]");
+    private static final Pattern ARTICLE_LINK_PATTERN = Pattern.compile("/article/([\\w-]+)");
 
     private final MarkdownParserService markdownParserService;
     private final Map<String, Integer> viewCounter = new ConcurrentHashMap<>();
@@ -135,6 +146,78 @@ public class MarkdownArticleService implements ArticleService {
     }
 
     @Override
+    public GraphResponse getGraph() {
+        List<Article> articles = getPublishedArticles();
+        Set<String> validSlugs = articles.stream()
+                .map(Article::getSlug)
+                .collect(Collectors.toSet());
+
+        Map<String, Integer> nodeLinkCount = new HashMap<>();
+        List<GraphLink> links = new ArrayList<>();
+
+        for (Article article : articles) {
+            // tag edges
+            for (String tag : article.getTags()) {
+                String tagId = "tag:" + tag;
+                links.add(GraphLink.builder()
+                        .source(article.getSlug())
+                        .target(tagId)
+                        .type("tag")
+                        .build());
+                nodeLinkCount.merge(article.getSlug(), 1, Integer::sum);
+                nodeLinkCount.merge(tagId, 1, Integer::sum);
+            }
+            // wikilink edges
+            List<String> outbound = article.getOutboundLinks();
+            if (outbound != null) {
+                for (String target : outbound) {
+                    if (validSlugs.contains(target) && !target.equals(article.getSlug())) {
+                        links.add(GraphLink.builder()
+                                .source(article.getSlug())
+                                .target(target)
+                                .type("wikilink")
+                                .build());
+                        nodeLinkCount.merge(article.getSlug(), 1, Integer::sum);
+                        nodeLinkCount.merge(target, 1, Integer::sum);
+                    }
+                }
+            }
+        }
+
+        // deduplicate links
+        Set<String> seen = new HashSet<>();
+        List<GraphLink> dedupLinks = links.stream()
+                .filter(l -> seen.add(l.getSource() + "→" + l.getTarget()))
+                .toList();
+
+        // article nodes
+        List<GraphNode> nodes = new ArrayList<>(articles.stream()
+                .map(a -> GraphNode.builder()
+                        .id(a.getSlug())
+                        .type("article")
+                        .title(a.getTitle())
+                        .category(a.getCategory())
+                        .linkCount(nodeLinkCount.getOrDefault(a.getSlug(), 0))
+                        .build())
+                .toList());
+
+        // tag nodes (only tags that have edges)
+        dedupLinks.stream()
+                .filter(l -> l.getTarget().startsWith("tag:"))
+                .map(GraphLink::getTarget)
+                .distinct()
+                .forEach(tagId -> nodes.add(GraphNode.builder()
+                        .id(tagId)
+                        .type("tag")
+                        .title(tagId.substring(4))
+                        .category("")
+                        .linkCount(nodeLinkCount.getOrDefault(tagId, 0))
+                        .build()));
+
+        return GraphResponse.builder().nodes(nodes).links(dedupLinks).build();
+    }
+
+    @Override
     public void clearCache() {
         synchronized (cacheLock) {
             cachedMarker = Long.MIN_VALUE;
@@ -202,6 +285,8 @@ public class MarkdownArticleService implements ArticleService {
                 LocalDateTime fileTime = resolveFileTime(file);
                 LocalDateTime createdAt = Objects.requireNonNullElse(matter.getDate(), fileTime);
 
+                List<String> outboundLinks = extractOutboundLinks(markdownBody);
+
                 Article article = Article.builder()
                         .id(id)
                         .slug(normalizedSlug)
@@ -216,6 +301,7 @@ public class MarkdownArticleService implements ArticleService {
                         .createdAt(createdAt)
                         .updatedAt(fileTime)
                         .views(viewCounter.getOrDefault(normalizedSlug, 0))
+                        .outboundLinks(outboundLinks)
                         .build();
 
                 loaded.add(article);
@@ -321,6 +407,15 @@ public class MarkdownArticleService implements ArticleService {
             return plainText;
         }
         return plainText.substring(0, SUMMARY_LENGTH) + "...";
+    }
+
+    private List<String> extractOutboundLinks(String markdownBody) {
+        Set<String> found = new HashSet<>();
+        Matcher m1 = WIKILINK_PATTERN.matcher(markdownBody);
+        while (m1.find()) found.add(m1.group(1).trim());
+        Matcher m2 = ARTICLE_LINK_PATTERN.matcher(markdownBody);
+        while (m2.find()) found.add(m2.group(1).trim());
+        return new ArrayList<>(found);
     }
 
     private String blankToDefault(String value, String fallback) {

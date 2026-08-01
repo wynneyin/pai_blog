@@ -290,6 +290,26 @@ a {
   flex-wrap: wrap;
 }
 
+.tags__list--scroll {
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.tags__list--scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.tags__list--scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tags__list--scroll::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 2px;
+}
+
 .tags__item--active {
   background: var(--brand);
   border-color: var(--brand);

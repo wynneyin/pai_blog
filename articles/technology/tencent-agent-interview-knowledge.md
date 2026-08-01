@@ -315,3 +315,12 @@ RAG 接入 Agent 后，不应该是固定的「先查再答」流程，而应该
 这 15 个问题覆盖了 Agent 工程的全链路：从 Skill 管理、上下文工程、记忆系统，到工具调用、多 Agent 协作、安全防护和效果评估。
 
 工程上最容易踩的坑，基本都在这里了。
+
+---
+
+## 相关阅读
+
+- [[agent-engineering-pitfalls]] — 面试考察点背后的工程实践：十个真实深坑
+- [[lossless-context-management-lcm]] — 上下文管理的学术前沿：LCM 架构
+- [[storage-is-not-memory-agent-recall]] — 记忆系统的前沿研究：Storage Is Not Memory
+- [[mindgames-multiagent-llm-arena]] — 多 Agent 评估：MINDGAMES 竞技场

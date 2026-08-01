@@ -1,10 +1,12 @@
 <script setup>
 import dayjs from "dayjs";
 import { computed, onMounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import api from "../api/client";
+import KnowledgeGraph from "../components/KnowledgeGraph.vue";
 
 const route = useRoute();
+const router = useRouter();
 const loading = ref(false);
 const error = ref("");
 const article = ref(null);
@@ -186,22 +188,30 @@ onMounted(() => {
         <section class="markdown-content" v-html="article.content"></section>
       </article>
 
-      <aside v-if="relatedArticles.length" class="article-related">
-        <h2>相关推荐</h2>
-        <div class="article-related__tags">
-          <span v-for="tag in relatedTags" :key="tag">#{{ tag }}</span>
-        </div>
-        <nav class="article-related__list">
-          <router-link
-            v-for="item in relatedArticles"
-            :key="item.slug"
-            :to="`/article/${item.slug}`"
-            class="article-related__item"
-          >
-            <p>{{ item.title }}</p>
-            <small>{{ dayjs(item.createdAt).format("YYYY-MM-DD") }}</small>
-          </router-link>
-        </nav>
+      <aside v-if="relatedArticles.length || article" class="article-related">
+        <KnowledgeGraph
+          v-if="article"
+          :current-slug="article.slug"
+          @navigate="(slug) => router.push(`/article/${slug}`)"
+        />
+
+        <template v-if="relatedArticles.length">
+          <h2>相关推荐</h2>
+          <div class="article-related__tags">
+            <span v-for="tag in relatedTags" :key="tag">#{{ tag }}</span>
+          </div>
+          <nav class="article-related__list">
+            <router-link
+              v-for="item in relatedArticles"
+              :key="item.slug"
+              :to="`/article/${item.slug}`"
+              class="article-related__item"
+            >
+              <p>{{ item.title }}</p>
+              <small>{{ dayjs(item.createdAt).format("YYYY-MM-DD") }}</small>
+            </router-link>
+          </nav>
+        </template>
       </aside>
     </div>
   </main>

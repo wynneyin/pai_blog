@@ -221,3 +221,11 @@ Agent 的分数不是单个模型的分数，而是**整条链路的综合分数
 ---
 
 *本文基于工程实践整理，部分观点参考了腾讯大模型应用开发团队的工程经验总结。*
+
+---
+
+## 相关阅读
+
+- [[lossless-context-management-lcm]] — 上下文膨胀的系统级解法：LCM 确定性架构
+- [[storage-is-not-memory-agent-recall]] — Agent 记忆系统的另一个维度：检索优先
+- [[tencent-agent-interview-knowledge]] — 这些深坑的面试版：腾讯 Agent 方向考察点
