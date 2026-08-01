@@ -33,13 +33,24 @@ Agent 的优化方向和 LLM 类似，分算法侧（更好的 reasoning、更�
 
 普通 LLM 推理每次请求独立，KV Cache 只在 batch 内复用。但 Agent 是多轮的——每一轮都携带完整的 system prompt、历史对话和 tool 返回结果，前缀高度重叠。如果每轮都重新计算 prefill，时间浪费极大。
 
-**GAIATrace**（arxiv:2606.01725）是第一个 token 级 Agent trace 数据集，记录了在 GAIA benchmark 上运行的两个 SOTA agentic system（MiroThinker 和 OWL）的完整推理轨迹，包括每个 LLM call 的 token 数、任务结构和多模型协作关系。
+**GAIATrace**（arxiv:2606.01725，Penn State + SK Hynix + KAIST）是第一个 token 级 Agent trace 数据集，记录了两个 SOTA agentic system 在 GAIA benchmark 上的完整执行轨迹：
 
-配套的 **Vidur-Agent** 是 trace-driven simulator，可以在不同系统配置下回放 GAIATrace，低成本地评估系统优化效果。
+- **MiroThinker**：ReAct 风格，有一个 Main-LLM（编排器）和多个 Sub-LLM（工具/执行器），随着对话轮数增加，推理 token 快速累积，prefill 增长迅速
+- **OWL**：Sub-LLM 频繁处理长文本或图像，Sub-LLM 本身是性能瓶颈
 
-论文的核心发现之一是：开启 prefix cache 后，Agent 任务级 E2E latency 可提升 **1.67×–3.82×**。但并非所有组件都受益——在 MiroThinker 中，Main-LLM 的 TTFT 大幅下降，但 Sub-LLM 的 TTFT 反而恶化：因为 Main-LLM 因 cache 命中变快，向 Sub-LLM 提交请求的频率上升，Sub-LLM 的 prefill 队列反而被撑长了。这个"加速一个 LLM 反而拖慢另一个"的现象在简单 Agent 研究中很少被观察到。
+配套的 **Vidur-Agent** 是 trace-driven simulator，支持多模型异构架构、KV prefix cache、prefill-decode 分离等特性，可以低成本地在不同系统配置下回放 GAIATrace。
 
-> **核心启示**：prefix cache 对 Agent 的收益远超单轮推理，但多 LLM 协作场景下需要系统级统筹，而非单点优化。
+**核心发现：prefix cache 带来 1.67×–3.82× 的任务级加速**——远超此前简单 Agent 研究中报告的约 15.7% 的提升。但收益高度不均匀，且存在反直觉的副作用：
+
+| 组件 | prefix cache 开启后 |
+|------|-------------------|
+| MiroThinker Main-LLM TTFT | 大幅下降 ✅ |
+| MiroThinker Sub-LLM TTFT | **反而恶化** ❌ |
+| OWL Sub-LLM | 改善有限（本身 KV 命中率极低）|
+
+MiroThinker 的 Sub-LLM TTFT 恶化的机制：Main-LLM 因 cache 命中变快，向 Sub-LLM 提交请求的频率升高，Sub-LLM 的 prefill 队列被撑长，反而拖慢了。这个"加速上游反而拖垮下游"的现象在只研究单 LLM 的工作中完全观察不到。
+
+> **核心启示**：任务级 latency 和组件级 TTFT 可以根本性地背离——优化一个 LLM 的 serving 不等于优化整个 Agent 的 E2E 延迟，多模型协作需要系统级统筹。
 
 ---
 
@@ -61,24 +72,42 @@ Agent 的优化方向和 LLM 类似，分算法侧（更好的 reasoning、更�
 
 ---
 
-### TokenCake：工具调用期间的 KV 卸载与预上传
+### TokenCake：时间 + 空间双维度协同
 
-**TokenCake**（arxiv:2510.18586）观察到一个被忽视的问题：agent 在等待 tool 执行结果（比如等搜索返回、等代码跑完）时，它的 KV cache 静静地躺在 GPU 显存里，什么事都不做，但又占着宝贵的空间。
+**TokenCake**（arxiv:2510.18586，北大 + 阿里）针对 multi-agent 应用的两个 KV cache 失效模式：
 
-TokenCake 提出 **Temporal Scheduler**：
+- **空间竞争**：多个 agent 同时抢 GPU 显存，LRU 淘汰策略不知道哪个 agent 是关键路径，可能正好淘汰了下一步要用的 cache
+- **时间闲置**：agent 等 tool 执行结果期间，它的 KV cache 白白占着 GPU 显存，什么都不做
 
-- **机会式卸载**：当 agent 进入 tool call 等待状态时，主动将其 KV 卸载到 CPU，释放 GPU 显存给其他 agent 使用
-- **预测性上传**：根据 tool 执行时间预测，提前将 KV 搬回 GPU，在 agent 恢复执行前完成数据传输，隐藏传输延迟
+TokenCake 用两个调度器协同解决：
 
-配合 Spatial Scheduler 处理空间竞争（避免关键 agent 的 KV 被挤掉），TokenCake 在 multi-agent 高并发场景下显著提升吞吐量。
+**Temporal Scheduler（时间维度）**：
+- 事件驱动，agent 发出 function call 时立即将其 KV 卸载到 CPU DRAM
+- 根据 tool 执行时间预测，提前将 KV 搬回 GPU，传输延迟被 tool 执行时间隐藏
+
+**Spatial Scheduler（空间维度）**：
+- 基于 workflow DAG 的关键路径 + 运行时状态计算优先级
+- 为关键路径 agent 预留显存分区，防止被低优先级 agent 挤掉
+
+**效果**：相比 vLLM，E2E latency 降低 **47.06%**，GPU 显存利用率提升 **16.9%**。
 
 ---
 
-### Continuum：跨 tool call 的 TTL 固定
+### Continuum：TTL 固定，跨 tool call 保留 KV
 
-**Continuum** 采用更简单的策略：对于执行时间极短的 tool call，重新计算 KV 的开销比卸载/恢复还高，因此用 **time-to-live pinning** 把 KV 固定在显存里，跨越短暂的 tool 等待期，直接复用。
+**Continuum**（arxiv:2511.02230，UC Berkeley，ICLR 2026）解决的问题更直接：标准 inference engine 在 agent 进入 tool call 等待时立即淘汰其 KV cache，下一轮恢复时不得不重算——而这个代价往往远高于把 KV 留着的代价。
 
-KVFlow 侧重 workflow 级调度，Continuum 侧重短 tool call 的 KV 保留，两者互补。
+**核心设计**：计算一个 TTL（time-to-live），在 TTL 期间将 KV 固定在显存里：
+
+```
+TTL = f(重载成本, 预期 tool 延迟, 当前队列延迟)
+```
+
+只有当等待时间短于重载成本时才固定，TTL 到期自动释放，高负载时优雅退化。
+
+同时配合 **program-level FCFS**：将同一个 agent job 的所有 turn 作为整体调度，防止单轮等待饿死整个 job。
+
+**效果**：在真实 SWE-agent workload 上延迟最高降低 **8.18×**，跨 benchmark 平均任务完成时间提升 **1.12×–3.66×**，吞吐量提升 **1.10×–3.22×**。
 
 ---
 
@@ -86,7 +115,15 @@ KVFlow 侧重 workflow 级调度，Continuum 侧重短 tool call 的 KV 保留�
 
 ### 问题有多严重？
 
-**PASTE**（arxiv:2603.18897）在 deep research、coding、scientific agent 三类场景中做了实测：**tool execution 占 E2E latency 的 45%–57%**。这意味着大模型在生成的时候，工具在等；工具在跑的时候，大模型在等。两者几乎从不重叠。
+**PASTE**（arxiv:2603.18897，上交 + Microsoft Research，v3 更名为 "Parallelizing Tool Execution and LLM Generation for Low-Latency Agent Serving"）在三类真实 agent 上做了实测，tool execution 在 E2E latency 中的占比：
+
+| Agent | 类型 | Tool 占比 |
+|-------|------|---------|
+| gemini-cli（Google 官方开源） | coding / SWE-bench | ~60% |
+| Qwen Deep Research | 深度研究 / DeepResearchBench | ~50% |
+| VirtualLab | 科学研究 / ScholarQA | ~36%–45% |
+
+工具执行全程躺在关键路径上，大模型生成时工具在等，工具跑完时大模型再生成——两者几乎从不重叠。
 
 **Autellix**（arxiv:2502.13965，NSDI 2026）从 serving 侧看到了另一面：高负载（load=0.9）下，程序的 E2E latency 被分解后，**等待时间占比触目惊心**：
 
@@ -105,16 +142,32 @@ Agent 程序越复杂（LLM call 链越长），等待占比越高——因为�
 PASTE 的核心洞察：**Agent 程序的控制流具有稳定的模式**。同一个 agent 在不同 task 上倾向于按相同顺序调用同一组 tool。如果这个模式可以被预测，就可以在 LLM 还在生成上一步输出的时候，提前投机性地发射下一个 tool call——就像 CPU 的乱序执行把内存访问提前一样。
 
 **系统设计**：
-1. **Pattern Miner**：从历史执行轨迹中挖掘 tool call 序列的重复模式，建立预测模型
-2. **Speculative Executor**：在 LLM generation 期间，根据预测模式提前发起 tool 请求
-3. **Verification & Rollback**：LLM 输出确认后，若与预测一致，直接使用结果；若不一致，丢弃并正常执行
 
-PASTE 作为 sidecar 部署在现有 agent runtime 旁边，无需修改底层基础设施。
+PASTE 的核心抽象是 **Pattern Tuple**，同时捕获两类规律：
+- **控制流规律**：哪个 tool 之后通常跟着哪个 tool（如 `git clone` 后几乎必然跟 `git checkout`）
+- **数据流规律**：tool 参数如何从之前的 tool 输出中派生
+
+基于此，PASTE 由三个组件构成：
+
+- **Pattern Analyzer**：从历史执行轨迹中挖掘控制流和数据流规律，构建预测模型，在服务阶段根据当前 session 状态生成具体的下一步 tool call 预测
+- **Tool Speculation Scheduler**：协调正式调用和投机调用——在 LLM 生成期间发射投机 tool call，隔离结果直到 LLM 确认，保障正式调用的优先级不受影响
+- **LLM-Tool Co-Scheduler**：控制返回 LLM session 的节奏，防止大量投机调用完成后同时涌入 GPU 导致瓶颈转移
+
+投机执行管线：
+1. Pattern Analyzer 预测下一个最可能的 tool call，提前发射
+2. 投机结果隔离存放，等 LLM 确认
+3. 若匹配：直接提交，工具延迟完全被隐藏；若不匹配：丢弃，零正确性影响
+
+**两个正确性保证**：
+- **Promotion 协议**：LLM 确认的 tool call 若与正在投机执行的任务匹配，立即提升其优先级并提交结果
+- **Non-interference 保证**：投机任务只使用"松弛资源"（transient idle compute），资源紧张时立即抢占，绝不影响正式执行
+
+PASTE 作为 sidecar 部署，无需修改底层 LLM serving 或 agent runtime。
 
 **效果**：
-- 平均任务完成时间降低 **43.5%**
-- 工具平均延迟降低 **1.8×**
-- p95/p99 工具延迟降低 **59.3%/60.6%**
+- 平均任务完成时间降低 **43.5%–48.5%**
+- 工具平均延迟降低 **1.8×**（最高 55.2%）
+- p95 尾延迟降低最高 **59.3%**，p99 降低最高 **60.6%**
 
 ---
 
@@ -134,17 +187,33 @@ PASTE 作为 sidecar 部署在现有 agent runtime 旁边，无需修改底层�
 
 ---
 
-### SPAgent：搜索 Agent 的投机加速
+### SPAgent：搜索 Agent 的两阶段投机
 
-**SPAgent**（arxiv:2511.20048）针对 multi-step search agent 做了算法-系统协同设计。
+**SPAgent**（arxiv:2511.20048，清华 NICS-EFC + Infinigence）针对 ReAct 式搜索 agent 做了算法-系统协同设计。
 
-核心观察：**搜索 agent 早期步骤往往是简单的信息收集**，正确动作可以不经过完整推理就被预测出来（例如"下一步肯定还是搜索，关键词大概率是什么"）。
+每个 agent step 有两个串行瓶颈：**LLM 推理**（生成 thought + action）和**工具执行**（Wikipedia API 约 1.5s）。SPAgent 分别对这两个瓶颈出手：
 
-**两层设计**：
-1. **两阶段自适应投机**：算法侧，引入置信度估计，对高置信度预测跳过 verification，减少不必要的 LLM call
-2. **两级调度器**：系统侧，根据 serving engine 负载动态调节投机的激进程度——高负载时保守投机（减少浪费），低负载时激进投机（最大化加速）
+**Phase 1 — 激进投机（针对 LLM 推理时间）**：
+- 用于早期简单的信息收集步骤
+- **直接跳过 LLM reasoning**，不生成 chain-of-thought，直接预测下一个动作
+- 若预测错误则回退到完整推理（rollback）
+- 消除了早期不必要的 token 生成开销
 
-**效果**：在 Qwen2.5、Gemma-3 等多个模型上，E2E 加速 **1.65×**，且准确率持平甚至略有提升（因为投机执行了更多动作，获取了更多信息）。
+**Phase 2 — 验证型投机（针对工具执行时间）**：
+- 用于需要推理的复杂步骤
+- **在 LLM 推理期间同步发出推测的 tool call**，工具执行与 LLM 生成重叠
+- 若 LLM 最终决定与预测一致：工具结果已就绪，直接使用
+- 若不一致：丢弃投机结果，重新执行正确调用
+
+对比前序工作 "Speculative Actions"（只做了 Phase 2），SPAgent 补上了 Phase 1，避免了前者因额外推理调用导致推理时间反增 26% 的问题。
+
+**两级调度器（系统侧）**：根据 engine 当前负载动态决定是否触发投机——高负载时保守，低负载时激进，避免投机浪费加剧排队。
+
+**效果（vLLM + Wikipedia API，Qwen2.5/Gemma-3 多模型验证）**：
+- E2E 加速最高 **1.65×**，平均 **24.2%**
+- LLM 推理时间减少 **23.8%**（Phase 1）
+- 工具执行等待时间减少 **29.4%**（Phase 2）
+- 准确率持平，部分模型（Qwen2.5-32B）在 TriviaQA 上准确率提升超 5%
 
 ---
 
@@ -152,15 +221,31 @@ PASTE 作为 sidecar 部署在现有 agent runtime 旁边，无需修改底层�
 
 ### 容器启动是个大坑
 
-对于代码修改类、沙箱执行类 agent（自动修 bug、跑 pytest、执行 bash 命令），每次 tool call 都可能需要一个隔离的执行环境。
+**AgentCgroup**（arxiv:2602.09345，UC Santa Cruz + Virginia Tech）对 144 个 SWE-rebench 任务做了细粒度的 eBPF 级 OS profiling，得到了这张 E2E latency 分解图：
 
-**AgentCgroup** 的测量结果：**container/agent 初始化开销占 E2E latency 的 31%–48%**。完整虚拟机的启动延迟通常达到数十秒，直接破坏了 agent 的 think-act-observe 循环节奏。
+| 组件 | 占 E2E 时间比例 |
+|------|--------------|
+| 容器 + agent 初始化（冷启动） | **31%–48%** |
+| 工具执行 | ~26% |
+| LLM 推理 | 26%–44% |
 
-**核心优化思路**：
+冷启动之所以这么重——AI coding agent 的容器镜像是多 GB 级别的（捆绑了编译器、测试运行器、包管理器、语言服务器等），每次 OOM kill 后都要重新拉取镜像层、重初始化容器框架、重建 agent 状态。这个代价远超传统 serverless 冷启动。
 
-1. **热沙箱复用**：预先启动一批容器（hot pool），agent 需要时直接分配，而不是从零创建
-2. **预构建依赖**：常用 Python 包、项目依赖、镜像层提前构建好，避免每次安装
-3. **跨任务环境复用**：如果两个任务的依赖环境相同，直接共享已初始化的容器状态
+更糟糕的是资源需求极度不可预测：
+- 同一任务不同运行之间，内存需求差异可达 **1.8×**
+- 不同任务之间差异高达 **20×**
+- 峰值/均值内存比：**15.4×**
+
+**AgentCgroup 的系统设计**：基于 eBPF 的 OS 资源控制器，三个核心原则：
+
+1. **粒度对齐**：用 cgroup v2 层级结构对齐 tool call 边界——每个 agent 是父节点，每个 tool call 执行期间获得一个临时子 cgroup，透明 bash wrapper 自动拦截，agent 代码零改动
+2. **内核级响应**：用 `sched_ext`（CPU 调度）和 `memcg_bpf_ops`（内存控制）在微秒级内核层直接执行，无用户态上下文切换开销
+3. **意图驱动的自适应**：不用静态限额，而是接收高层意图（"这个任务高优先级"），根据实时 tool call 行为动态调整分配
+
+**效果**（多租户内存竞争场景）：
+- 高优先级任务 p95 分配延迟降低 **29%**（70.97ms → 50.14ms）
+- 内存紧张时任务存活率 **100%**（通过压制低优先级分配）
+- 高优先级任务额外开销仅 **+2.8%**
 
 ---
 
