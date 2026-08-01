@@ -88,7 +88,15 @@ KVFlow 侧重 workflow 级调度，Continuum 侧重短 tool call 的 KV 保留�
 
 **PASTE**（arxiv:2603.18897）在 deep research、coding、scientific agent 三类场景中做了实测：**tool execution 占 E2E latency 的 45%–57%**。这意味着大模型在生成的时候，工具在等；工具在跑的时候，大模型在等。两者几乎从不重叠。
 
-**Autellix**（arxiv:2502.13965）从 serving 侧看到了另一面：**高负载（load=0.9）下，不同 agent workload 的 LLM 请求等待时间占 80%–91%**。Agent 程序的 LLM call 被当作独立请求排队，系统完全不知道它们属于同一个 program，也不知道哪个 call 是关键路径。
+**Autellix**（arxiv:2502.13965，NSDI 2026）从 serving 侧看到了另一面：高负载（load=0.9）下，程序的 E2E latency 被分解后，**等待时间占比触目惊心**：
+
+| Workload | 等待时间占比 | 执行时间占比 |
+|----------|------------|------------|
+| Chatbot  | 80.4%      | 19.6%      |
+| ReAct    | 87.0%      | 13.0%      |
+| MCTS     | 91.3%      | 8.7%       |
+
+Agent 程序越复杂（LLM call 链越长），等待占比越高——因为每一个 call 都要重新排队，积累的延迟是乘法效应。
 
 ---
 
