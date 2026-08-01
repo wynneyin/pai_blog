@@ -342,18 +342,7 @@ a {
   display: grid;
   gap: 20px;
   align-items: start;
-}
-
-.article-layout--toc-related {
   grid-template-columns: 200px minmax(0, 1.5fr) 240px;
-}
-
-.article-layout--toc {
-  grid-template-columns: 200px minmax(0, 1.5fr);
-}
-
-.article-layout--related {
-  grid-template-columns: minmax(0, 1.5fr) 240px;
 }
 
 .article-toc {

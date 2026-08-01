@@ -152,16 +152,8 @@ onMounted(() => {
     <p v-if="error" class="status status--error">{{ error }}</p>
     <p v-else-if="loading" class="status">加载中...</p>
 
-    <div
-      v-else-if="article"
-      :class="[
-        'article-layout',
-        hasToc && hasRelated && 'article-layout--toc-related',
-        hasToc && !hasRelated && 'article-layout--toc',
-        !hasToc && hasRelated && 'article-layout--related'
-      ]"
-    >
-      <aside v-if="tocItems.length" class="article-toc">
+    <div v-else-if="article" class="article-layout">
+      <aside class="article-toc" :style="tocItems.length ? '' : 'visibility:hidden'">
         <h2>目录</h2>
         <nav>
           <a
