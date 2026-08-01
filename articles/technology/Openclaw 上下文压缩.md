@@ -1,7 +1,12 @@
 ---
 title: Openclaw 上下文压缩
-date: 2026-03-25
+slug: openclaw-context-compression
+category: 技术
 tags: [Agent]
+author: Wynne
+date: "2026-03-25 00:00:00"
+summary: OpenClaw 在长对话场景中压缩上下文窗口的三阶段算法设计。
+published: true
 ---
 
 # Openclaw 上下文压缩

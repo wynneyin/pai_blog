@@ -1,7 +1,12 @@
 ---
-title: openclaw-cron心跳
-date: 2026-3-25
-tags: [Agent,openclaw]
+title: Openclaw 心跳机制
+slug: openclaw-cron-heartbeat
+category: 技术
+tags: [Agent, Openclaw]
+author: Wynne
+date: "2026-03-25 00:00:00"
+summary: OpenClaw 定时任务调度器的设计原理与心跳机制。
+published: true
 ---
 
 # Openclaw 心跳机制
