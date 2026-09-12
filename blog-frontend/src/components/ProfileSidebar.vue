@@ -31,35 +31,31 @@ function onAvatarError(event) {
   event.target.src = "/avatar.png";
 }
 
-// TODO: 替换为真实的论文成果
 const publications = [
   {
-    title: "论文标题占位 A",
-    venue: "期刊 / 会议名称，卷期号",
-    year: "2026",
+    title: "TetrisZK: Memory-Aware 2D Parallelism for Multi-GPU ZKP",
+    venue: "ICCD 2026 · 第一作者",
+    year: "2025.08 - 2025.11",
     link: ""
   },
   {
-    title: "论文标题占位 B",
-    venue: "期刊 / 会议名称，卷期号",
-    year: "2025",
+    title: "Pipelonk: End-to-End ZKP Generation on GPUs",
+    venue: "PPoPP 2026 · 第三作者",
+    year: "2025.01 - 2025.07",
     link: ""
   }
 ];
 
-// TODO: 替换为真实的实习履历
 const internships = [
   {
-    org: "公司 / 机构名称占位",
-    role: "职位占位",
-    period: "2026.01 - 2026.06",
-    desc: "一句话描述职责或产出占位。"
+    org: "Momenta（魔门塔自动驾驶）",
+    role: "平台工程师 · GPU 训练平台",
+    period: "2026.05 - 2026.08"
   },
   {
-    org: "公司 / 机构名称占位",
-    role: "职位占位",
-    period: "2025.06 - 2025.09",
-    desc: "一句话描述职责或产出占位。"
+    org: "比特大陆算能科技",
+    role: "算法工程师 · Openclaw 一体机开发",
+    period: "2026.03 - 2026.05"
   }
 ];
 </script>
@@ -120,7 +116,6 @@ const internships = [
             <span class="profile__intern-period">{{ job.period }}</span>
           </div>
           <p class="profile__intern-role">{{ job.role }}</p>
-          <p class="profile__intern-desc">{{ job.desc }}</p>
         </li>
       </ol>
     </details>
