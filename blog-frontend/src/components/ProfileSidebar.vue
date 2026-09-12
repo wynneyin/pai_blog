@@ -69,7 +69,7 @@ const internships = [
       @error="onAvatarError"
     />
     <h3>Wynne</h3>
-    <p class="profile__role">后端开发者 / 内容创作者</p>
+    <p class="profile__role">并行计算/AI 应用/推理引擎开发者 / 内容创作者</p>
     <p class="profile__bio">
       记录技术实践、产品思考和生活片段。希望每一篇文章都能解决一个真实问题。
     </p>
