@@ -16,7 +16,44 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect current server deployment
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        env:
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/root/pai_blog' }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ vars.SERVER_PORT || '22' }}
+          fingerprint: ${{ secrets.SERVER_SSH_FINGERPRINT }}
+          envs: DEPLOY_PATH
+          script: |
+            set -eu
+            cd "$DEPLOY_PATH"
+            printf 'Server checkout: '
+            git rev-parse --short HEAD
+            git status --short --untracked-files=no
+            if command -v docker >/dev/null; then
+              docker ps --filter name=blog- --format 'Container: {{.Names}} {{.Image}} {{.Ports}}' || true
+              docker inspect --format 'Compose files: {{ index .Config.Labels "com.docker.compose.project.config_files" }}' blog-frontend 2>/dev/null || true
+            fi
+            if command -v pm2 >/dev/null && pm2 describe blog-backend >/dev/null 2>&1; then
+              pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>JSON.parse(s).filter(x=>x.name==="blog-backend").forEach(x=>console.log("PM2 backend: "+x.pm2_env.pm_exec_path)))'
+            fi
+            if ! git diff --quiet HEAD -- . ':!.env' ':!.env.prod' ':!articles' ':!blog-frontend/dist'; then
+              echo 'Uncommitted server changes must be preserved before deploying:'
+              git diff --name-only HEAD -- . ':!.env' ':!.env.prod' ':!articles' ':!blog-frontend/dist'
+              exit 1
+            fi
+
   build-and-deploy:
+    needs: preflight
+    if: ${{ !cancelled() && (needs.preflight.result == 'success' || needs.preflight.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
