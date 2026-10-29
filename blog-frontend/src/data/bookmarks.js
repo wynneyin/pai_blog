@@ -1,5 +1,6 @@
 // 编辑这份清单即可维护公开的网站收藏；每个网址请使用完整的 HTTPS 地址。
 export const bookmarks = [
+  { name: "GPUArch", url: "https://gpuarch.caic.ac.cn/", category: "学术研究", description: "GPU 架构相关网站。", mark: "GPU", color: "#0f766e" },
   { name: "GitHub", url: "https://github.com", category: "开发工具", description: "发现开源项目，阅读优秀代码，把想法变成作品。", mark: "GH", color: "#334155" },
   { name: "MDN Web Docs", url: "https://developer.mozilla.org/zh-CN/", category: "技术文档", description: "从 HTML、CSS 到 JavaScript，随时翻阅的 Web 开发手册。", mark: "M", color: "#0f766e" },
   { name: "Vue.js", url: "https://cn.vuejs.org", category: "技术文档", description: "渐进式 JavaScript 框架，构建清晰、灵活的交互界面。", mark: "V", color: "#34765a" },
