@@ -16,8 +16,25 @@ commit="${2:?Usage: deploy.sh BUNDLE_DIRECTORY COMMIT_SHA}"
 command -v curl >/dev/null || fail 'curl is required for health checks.'
 
 check_health() {
-  local url="${DEPLOY_HEALTHCHECK_URL:-http://127.0.0.1}"
-  local args=(-fsS --max-time 10 --retry 12 --retry-delay 3 --retry-connrefused --retry-all-errors)
+  local url="${DEPLOY_HEALTHCHECK_URL:-}"
+  local args=(-fLSs --max-time 10 --retry 12 --retry-delay 3 --retry-connrefused --retry-all-errors)
+  if [[ -z "$url" ]]; then
+    local nginx_host=''
+    if [[ -f blog-frontend/nginx.conf ]]; then
+      nginx_host="$(awk '$1 == "server_name" { for (i=2; i<=NF; i++) { sub(/;$/, "", $i); if ($i ~ /^[A-Za-z0-9.-]+\.[A-Za-z0-9.-]+$/) { print $i; exit } } }' blog-frontend/nginx.conf)"
+    fi
+    if [[ -n "$nginx_host" ]]; then
+      url="http://$nginx_host"
+      if grep -Eq '^[[:space:]]*listen[[:space:]]+([^;[:space:]]*:)?443([[:space:];]|$)' blog-frontend/nginx.conf; then
+        url="https://$nginx_host"
+      fi
+      # Use the real virtual host and verify TLS while checking this server locally.
+      args+=(--resolve "$nginx_host:80:127.0.0.1" --resolve "$nginx_host:443:127.0.0.1")
+    else
+      url='http://127.0.0.1'
+    fi
+  fi
+  log "Health check: $url"
   curl "${args[@]}" "${url%/}/" -o /dev/null
   curl "${args[@]}" "${url%/}/api/articles?page=1&pageSize=1" |
     grep -E '"success"[[:space:]]*:[[:space:]]*true' >/dev/null

@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import tarfile
 import tempfile
@@ -166,6 +167,65 @@ class DeployTests(unittest.TestCase):
         result = self.run_deploy("compose", HEALTH_FAIL="1")
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("Successfully deployed", result.stdout)
+
+    def test_https_health_check_uses_the_live_virtual_host(self):
+        (self.repo / "blog-frontend").mkdir()
+        (self.repo / "blog-frontend/nginx.conf").write_text(
+            "server {\n listen 443 ssl;\n server_name blog.example.test;\n}\n"
+        )
+        result = self.run_deploy("compose", DEPLOY_HEALTHCHECK_URL="")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        curls = [call for call in self.calls() if call[0] == "curl"]
+        self.assertIn("https://blog.example.test/", curls[0])
+        self.assertIn("blog.example.test:443:127.0.0.1", curls[0])
+        self.assertFalse(any("--insecure" in call or "-k" in call for call in curls))
+
+
+class CheckoutTests(unittest.TestCase):
+    """Use real Git to verify local production configuration survives a fast-forward."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = Path(self.tmp.name)
+        self.git("init", "-b", "main")
+        self.git("config", "user.name", "Deployment Test")
+        self.git("config", "user.email", "deployment-test@example.test")
+        (self.repo / "blog-frontend/src").mkdir(parents=True)
+        (self.repo / "blog-frontend/nginx.conf").write_text("original nginx\n")
+        (self.repo / "docker-compose.yml").write_text("original compose\n")
+        (self.repo / "blog-frontend/src/app.js").write_text("original app\n")
+        self.git("add", ".")
+        self.git("commit", "-m", "base")
+        workflow = SCRIPT.parents[1] / ".github/workflows/deploy-articles.yml"
+        line = next(line.strip() for line in workflow.read_text().splitlines()
+                    if line.strip().startswith("if ! git diff --quiet HEAD --"))
+        self.guard = shlex.split(line.removeprefix("if ! ").removesuffix("; then"))
+
+    def git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.repo, check=True,
+                              capture_output=True, text=True)
+
+    def test_local_tls_configuration_survives_fast_forward(self):
+        self.git("checkout", "-b", "release")
+        (self.repo / "workflow.txt").write_text("new deployment workflow\n")
+        self.git("add", ".")
+        self.git("commit", "-m", "release")
+        self.git("checkout", "main")
+        (self.repo / "blog-frontend/nginx.conf").write_text("live HTTPS settings\n")
+        (self.repo / "docker-compose.yml").write_text("live certificate mounts\n")
+        guard = subprocess.run(self.guard, cwd=self.repo, capture_output=True)
+        self.assertEqual(guard.returncode, 0)
+        self.git("merge", "--ff-only", "release")
+        self.assertEqual((self.repo / "blog-frontend/nginx.conf").read_text(), "live HTTPS settings\n")
+        self.assertEqual((self.repo / "docker-compose.yml").read_text(), "live certificate mounts\n")
+        self.assertEqual(self.git("rev-parse", "HEAD").stdout,
+                         self.git("rev-parse", "release").stdout)
+
+    def test_uncommitted_application_code_still_stops_deployment(self):
+        (self.repo / "blog-frontend/src/app.js").write_text("uncommitted feature\n")
+        guard = subprocess.run(self.guard, cwd=self.repo, capture_output=True)
+        self.assertEqual(guard.returncode, 1)
 
 
 if __name__ == "__main__":

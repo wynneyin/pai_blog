@@ -45,9 +45,9 @@ jobs:
             if command -v pm2 >/dev/null && pm2 describe blog-backend >/dev/null 2>&1; then
               pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>JSON.parse(s).filter(x=>x.name==="blog-backend").forEach(x=>console.log("PM2 backend: "+x.pm2_env.pm_exec_path)))'
             fi
-            if ! git diff --quiet HEAD -- . ':!.env' ':!.env.prod' ':!articles' ':!blog-frontend/dist'; then
+            if ! git diff --quiet HEAD -- . ':!.env' ':!.env.prod' ':!articles' ':!blog-frontend/dist' ':!blog-frontend/nginx.conf' ':!docker-compose.yml'; then
               echo 'Uncommitted server changes must be preserved before deploying:'
-              git diff --name-only HEAD -- . ':!.env' ':!.env.prod' ':!articles' ':!blog-frontend/dist'
+              git diff --name-only HEAD -- . ':!.env' ':!.env.prod' ':!articles' ':!blog-frontend/dist' ':!blog-frontend/nginx.conf' ':!docker-compose.yml'
               exit 1
             fi
 
@@ -123,7 +123,7 @@ jobs:
           DEPLOY_COMMIT: ${{ github.sha }}
           DEPLOY_BUNDLE: /tmp/pai-blog-${{ github.run_id }}-${{ github.run_attempt }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/root/pai_blog' }}
-          DEPLOY_HEALTHCHECK_URL: ${{ vars.DEPLOY_HEALTHCHECK_URL || 'http://127.0.0.1' }}
+          DEPLOY_HEALTHCHECK_URL: ${{ vars.DEPLOY_HEALTHCHECK_URL }}
           DEPLOY_FRONTEND_DIR: ${{ vars.DEPLOY_FRONTEND_DIR || '/var/www/blog' }}
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -144,7 +144,12 @@ jobs:
               echo 'A newer main commit is available; skipping this outdated release.'
               exit 0
             fi
-            git diff --exit-code HEAD -- . ':!.env' ':!.env.prod' ':!articles' ':!blog-frontend/dist' >/dev/null
+            git diff --exit-code HEAD -- . ':!.env' ':!.env.prod' ':!articles' ':!blog-frontend/dist' ':!blog-frontend/nginx.conf' ':!docker-compose.yml' >/dev/null
+            config_backup="$(git rev-parse --git-path deploy-config-backups)/$(date -u +%Y%m%dT%H%M%SZ)-$DEPLOY_COMMIT"
+            mkdir -p "$config_backup/blog-frontend"
+            cp -p blog-frontend/nginx.conf "$config_backup/blog-frontend/nginx.conf"
+            cp -p docker-compose.yml "$config_backup/docker-compose.yml"
+            echo 'Saved a backup of the existing production configuration.'
             git merge --ff-only "$DEPLOY_COMMIT"
             test "$(git rev-parse HEAD)" = "$DEPLOY_COMMIT"
             bash scripts/deploy.sh "$DEPLOY_BUNDLE" "$DEPLOY_COMMIT"

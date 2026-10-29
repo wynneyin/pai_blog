@@ -34,7 +34,7 @@ PM2 部署直接发布 GitHub 构建的前端产物，重新安装 Node 生产�
 | --- | --- | --- |
 | `SERVER_PORT` | `22` | SSH 端口 |
 | `DEPLOY_PATH` | `/root/pai_blog` | 服务器上的现有仓库目录 |
-| `DEPLOY_HEALTHCHECK_URL` | `http://127.0.0.1` | 健康检查的站点根地址，包含端口（如需） |
+| `DEPLOY_HEALTHCHECK_URL` | 从 Nginx 自动识别 | 健康检查的站点根地址，包含端口（如需）；默认通过本机地址检查实际域名与 HTTPS |
 | `DEPLOY_FRONTEND_DIR` | `/var/www/blog` | PM2 部署对应的 Nginx 静态目录 |
 
 设置入口：仓库 Settings → Secrets and variables → Actions。
@@ -46,7 +46,7 @@ Docker 模式需 Docker Compose v2；PM2 模式需现有的 `blog-backend` 进�
 - 同一分支的运行不并行，不会为了新 push 中断正在执行的部署。
 - 使用现有自动拉取脚本相同的文件锁，避免同时修改服务器工作区。
 - 过期提交不会覆盖更新的 `main`；不能快进、源代码有本地修改或运行方式未知时停止。
-- 服务器的 `.env` / `.env.prod` 不被覆盖；`.env.prod` 存在时供 Compose 使用。
+- 保留服务器 `.env` / `.env.prod`、`blog-frontend/nginx.conf` 和 `docker-compose.yml` 的本地配置；不强制覆盖 Git 合并冲突。部署前将 Nginx 和 Compose 配置备份到 `.git/deploy-config-backups/`；`.env.prod` 存在时供 Compose 使用。
 - 前置检查失败不会进入部署；镜像构建失败不会执行容器替换。
 - 更新服务时可能有短暂中断；健康检查失败会标记失败，目前不自动回滚。
 - 不执行 `git reset --hard`、`docker compose down`、volume 删除或全局镜像清理。
