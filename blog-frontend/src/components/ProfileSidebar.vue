@@ -94,6 +94,13 @@ const internships = [
       <a href="https://github.com" target="_blank" rel="noreferrer">GitHub</a>
     </div>
 
+    <nav class="profile__navigation" aria-label="博客导航">
+      <router-link to="/bookmarks" class="profile__bookmark-link">
+        <span><strong>网站收藏</strong><small>常用工具、技术文档与阅读发现</small></span>
+        <span aria-hidden="true">↗</span>
+      </router-link>
+    </nav>
+
     <details class="profile__section" open>
       <summary>论文成果</summary>
       <ol class="profile__pub-list">
@@ -131,3 +138,12 @@ const internships = [
     </details>
   </aside>
 </template>
+
+<style scoped>
+.profile__navigation { margin-top: 16px; }
+.profile__bookmark-link { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(15, 118, 110, .06); color: var(--brand-2); transition: border-color .2s; }
+.profile__bookmark-link:hover { border-color: var(--brand-2); }
+.profile__bookmark-link:focus-visible { outline: 2px solid var(--brand-2); outline-offset: 3px; }
+.profile__bookmark-link strong { display: block; font-size: 14px; }
+.profile__bookmark-link small { display: block; margin-top: 5px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+</style>
