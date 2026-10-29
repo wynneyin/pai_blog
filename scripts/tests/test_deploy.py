@@ -42,7 +42,7 @@ elif name == "npm":
     if os.environ.get("NPM_FAIL") == "1": sys.exit(43)
 elif name == "curl":
     if os.environ.get("HEALTH_FAIL") == "1": sys.exit(22)
-    print('{"success":true,"data":{}}')
+    print(os.environ.get("API_BODY", '{"success":true,"data":{}}'))
 '''
 
 
@@ -179,6 +179,21 @@ class DeployTests(unittest.TestCase):
         self.assertIn("https://blog.example.test/", curls[0])
         self.assertIn("blog.example.test:443:127.0.0.1", curls[0])
         self.assertFalse(any("--insecure" in call or "-k" in call for call in curls))
+
+    def test_java_api_success_is_accepted(self):
+        result = self.run_deploy("compose", API_BODY='{"code":200,"message":"success","data":{}}')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Successfully deployed", result.stdout)
+
+    def test_api_application_error_is_rejected_even_with_http_200(self):
+        result = self.run_deploy("compose", API_BODY='{"code":500,"message":"error","data":{"code":200}}')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("Successfully deployed", result.stdout)
+
+    def test_spa_fallback_is_not_mistaken_for_a_healthy_api(self):
+        result = self.run_deploy("compose", API_BODY='<html>site shell</html>')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("Successfully deployed", result.stdout)
 
 
 class CheckoutTests(unittest.TestCase):

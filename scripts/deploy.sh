@@ -36,8 +36,10 @@ check_health() {
   fi
   log "Health check: $url"
   curl "${args[@]}" "${url%/}/" -o /dev/null
+  # Java uses {code: 200, ...}; the Node backend uses {success: true, ...}.
+  # Anchor to the first top-level field so nested error data cannot pass.
   curl "${args[@]}" "${url%/}/api/articles?page=1&pageSize=1" |
-    grep -E '"success"[[:space:]]*:[[:space:]]*true' >/dev/null
+    grep -E '^[[:space:]]*\{[[:space:]]*("success"[[:space:]]*:[[:space:]]*true|"code"[[:space:]]*:[[:space:]]*200)[[:space:]]*[,}]' >/dev/null
 }
 
 compose_files=''

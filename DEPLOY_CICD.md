@@ -10,7 +10,7 @@ Pull Request 运行构建检查；合并到 `main` 后才部署。Actions 页面
 2. 使用 `npm ci` 构建 Vue 前端，检查 Node 后端，并使用 Java 17 / Maven 构建和测试 Java 后端。
 3. 将同一提交的前端产物上传到服务器，然后使用现有 SSH 配置进入部署目录。
 4. 仅快进更新 `main`，识别并沿用线上实际的 Docker Compose 或 PM2 部署方式。
-5. 检查首页与 `/api/articles`；失败会让 Actions 显示红色，可点击步骤查看日志。
+5. 检查首页与 `/api/articles`；再从 GitHub 访问公网域名，确认首页引用了本次构建的资源且 API 正常。失败会让 Actions 显示红色，可点击步骤查看日志。
 
 Docker 部署沿用当前容器记录的项目名和 Compose 文件：先顺序构建前后端镜像，
 全部成功后再重建应用容器。前端镜像仍在服务器上构建，服务器需要有足够的构建内存。
@@ -36,6 +36,7 @@ PM2 部署直接发布 GitHub 构建的前端产物，重新安装 Node 生产�
 | `DEPLOY_PATH` | `/root/pai_blog` | 服务器上的现有仓库目录 |
 | `DEPLOY_HEALTHCHECK_URL` | 从 Nginx 自动识别 | 健康检查的站点根地址，包含端口（如需）；默认通过本机地址检查实际域名与 HTTPS |
 | `DEPLOY_FRONTEND_DIR` | `/var/www/blog` | PM2 部署对应的 Nginx 静态目录 |
+| `PUBLIC_SITE_URL` | `https://wynneyin.site` | 部署后从 GitHub 验证的公网根地址 |
 
 设置入口：仓库 Settings → Secrets and variables → Actions。
 服务器需已有正常运行的服务、Git、Bash、`flock`、`curl`，并能读取 GitHub 仓库。

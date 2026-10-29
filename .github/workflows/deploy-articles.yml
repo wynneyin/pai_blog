@@ -153,3 +153,25 @@ jobs:
             git merge --ff-only "$DEPLOY_COMMIT"
             test "$(git rev-parse HEAD)" = "$DEPLOY_COMMIT"
             bash scripts/deploy.sh "$DEPLOY_BUNDLE" "$DEPLOY_COMMIT"
+
+      - name: Verify public website
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          PUBLIC_SITE_URL: ${{ vars.PUBLIC_SITE_URL || 'https://wynneyin.site' }}
+        run: |
+          curl -fLSs --max-time 20 --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors \
+            "${PUBLIC_SITE_URL%/}/" -o .ci-artifacts/live-index.html
+          curl -fLSs --max-time 20 --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors \
+            "${PUBLIC_SITE_URL%/}/api/articles?page=1&pageSize=1" -o .ci-artifacts/live-api.json
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+          expected = Path('blog-frontend/dist/index.html').read_text()
+          actual = Path('.ci-artifacts/live-index.html').read_text()
+          assets = set(re.findall(r'"(/assets/[^\"]+)"', expected))
+          assert assets and all(asset in actual for asset in assets), 'Public homepage is serving an older frontend build'
+          payload = json.loads(Path('.ci-artifacts/live-api.json').read_text())
+          assert payload.get('code') == 200 or payload.get('success') is True, 'Public article API returned an application error'
+          print('Public homepage serves this build; article API is healthy.')
+          PY
