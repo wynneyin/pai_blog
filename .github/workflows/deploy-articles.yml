@@ -1,21 +1,113 @@
-name: Sync Articles
+name: Build and Deploy Blog
 
 on:
   push:
     branches: [main]
-    paths:
-      - "articles/**"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never interrupt an SSH deployment halfway through a service update.
+concurrency:
+  group: pai-blog-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  sync:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            blog-frontend/package-lock.json
+            blog-backend-node/package-lock.json
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: blog-backend/pom.xml
+
+      - name: Check deployment scripts
+        run: |
+          bash -n scripts/deploy.sh
+          python3 -m unittest discover -s scripts/tests -v
+
+      - name: Build frontend
+        working-directory: blog-frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Check Node backend
+        working-directory: blog-backend-node
+        run: |
+          npm ci --no-audit --no-fund
+          find src -name '*.js' -print0 | xargs -0 -n 1 node --check
+
+      - name: Build and test Java backend
+        run: mvn --batch-mode --no-transfer-progress -f blog-backend/pom.xml verify
+
+      - name: Prepare frontend release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          mkdir -p .ci-artifacts
+          tar -C blog-frontend/dist -czf .ci-artifacts/frontend.tar.gz .
+          printf '%s\n' "$GITHUB_SHA" > .ci-artifacts/commit
+
+      - name: Upload frontend release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ vars.SERVER_PORT || '22' }}
+          fingerprint: ${{ secrets.SERVER_SSH_FINGERPRINT }}
+          source: .ci-artifacts/frontend.tar.gz,.ci-artifacts/commit
+          target: /tmp/pai-blog-${{ github.run_id }}-${{ github.run_attempt }}
+          strip_components: 1
+
+      - name: Deploy and check server
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        env:
+          DEPLOY_COMMIT: ${{ github.sha }}
+          DEPLOY_BUNDLE: /tmp/pai-blog-${{ github.run_id }}-${{ github.run_attempt }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/root/pai_blog' }}
+          DEPLOY_HEALTHCHECK_URL: ${{ vars.DEPLOY_HEALTHCHECK_URL || 'http://127.0.0.1' }}
+          DEPLOY_FRONTEND_DIR: ${{ vars.DEPLOY_FRONTEND_DIR || '/var/www/blog' }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ vars.SERVER_PORT || '22' }}
+          fingerprint: ${{ secrets.SERVER_SSH_FINGERPRINT }}
+          command_timeout: 25m
+          envs: DEPLOY_COMMIT,DEPLOY_BUNDLE,DEPLOY_PATH,DEPLOY_HEALTHCHECK_URL,DEPLOY_FRONTEND_DIR
           script: |
-            cd /root/pai_blog
-            git pull origin main
+            set -eu
+            cd "$DEPLOY_PATH"
+            exec 9>/tmp/auto_git_pull_pai_blog.lock
+            flock -w 900 9
+            test "$(git branch --show-current)" = main
+            git fetch origin main
+            if [ "$(git rev-parse origin/main)" != "$DEPLOY_COMMIT" ]; then
+              echo 'A newer main commit is available; skipping this outdated release.'
+              exit 0
+            fi
+            git diff --exit-code HEAD -- . ':!.env' ':!.env.prod' ':!articles' ':!blog-frontend/dist' >/dev/null
+            git merge --ff-only "$DEPLOY_COMMIT"
+            test "$(git rev-parse HEAD)" = "$DEPLOY_COMMIT"
+            bash scripts/deploy.sh "$DEPLOY_BUNDLE" "$DEPLOY_COMMIT"
