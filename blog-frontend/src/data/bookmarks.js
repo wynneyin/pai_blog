@@ -6,5 +6,6 @@ export const bookmarks = [
   { name: "Vue.js", url: "https://cn.vuejs.org", category: "技术文档", description: "渐进式 JavaScript 框架，构建清晰、灵活的交互界面。", mark: "V", color: "#34765a" },
   { name: "Spring", url: "https://spring.io", category: "技术文档", description: "Java 开发的常用入口，查阅 Spring 生态的指南与参考文档。", mark: "S", color: "#577b31" },
   { name: "arXiv", url: "https://arxiv.org", category: "学术研究", description: "追踪计算机科学、数学与密码学等领域的论文和新想法。", mark: "ar", color: "#9b493b" },
-  { name: "爱好者周刊", url: "https://www.ruanyifeng.com/blog/weekly/", category: "阅读发现", description: "阮一峰的科技爱好者周刊，收集有趣的技术、工具与见闻。", mark: "阅", color: "#b45309" }
+  { name: "爱好者周刊", url: "https://www.ruanyifeng.com/blog/weekly/", category: "阅读发现", description: "阮一峰的科技爱好者周刊，收集有趣的技术、工具与见闻。", mark: "阅", color: "#b45309" },
+  { name: "kern roofline", url: "https://medal-active-attempting-dee.trycloudflare.com/", category: "开发工具", description: "基于 kern-serve 的 CUPTI 运行轨迹，分析 GPU Kernel 的 Roofline 效率、算子耗时与不同推理形状下的性能表现。", mark: "KR", color: "#2563eb" }
 ];
