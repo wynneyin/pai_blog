@@ -6,6 +6,7 @@ import CategoryTabs from "../components/CategoryTabs.vue";
 import ArticleCard from "../components/ArticleCard.vue";
 import PaginationNav from "../components/PaginationNav.vue";
 import ProfileSidebar from "../components/ProfileSidebar.vue";
+import BookmarkSidebar from "../components/BookmarkSidebar.vue";
 
 const loading = ref(false);
 const error = ref("");
@@ -97,7 +98,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="container">
+  <main class="container home-page">
     <BlogHero v-model:keyword="keywordInput" />
     <CategoryTabs
       :categories="categories"
@@ -105,7 +106,7 @@ onMounted(async () => {
       @change="onCategoryChange"
     />
 
-    <section class="content-grid content-grid--with-profile">
+    <section class="content-grid home-content-grid">
       <ProfileSidebar
         :article-count="pagination.total"
         :category-count="categories.length"
@@ -114,7 +115,7 @@ onMounted(async () => {
         :active-tag="query.tag"
         @tag-change="onTagChange"
       />
-      <div>
+      <div class="home-article-stream">
         <p v-if="error" class="status status--error">{{ error }}</p>
         <p v-else-if="loading" class="status">加载中...</p>
         <template v-else>
@@ -133,6 +134,21 @@ onMounted(async () => {
           />
         </template>
       </div>
+      <BookmarkSidebar />
     </section>
   </main>
 </template>
+
+<style scoped>
+.home-page { width: min(1480px, 96vw); }
+.home-content-grid { grid-template-columns: 250px minmax(0, 1fr) 280px; align-items: start; }
+.home-article-stream { min-width: 0; }
+@media (max-width: 1200px) {
+  .home-content-grid { grid-template-columns: 220px minmax(0, 1fr) 245px; }
+  .home-article-stream .card-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 960px) {
+  .home-content-grid { grid-template-columns: minmax(0, 1fr); }
+  .home-page { width: min(1120px, 92vw); }
+}
+</style>
