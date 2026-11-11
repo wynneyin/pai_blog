@@ -92,4 +92,24 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--brand-2); outli
 @media (max-width: 960px) { .bookmark-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 600px) { .bookmarks-page { padding-top: 36px; } .collection-intro { align-items: flex-start; } .collection-total { display: none; } .bookmark-grid { grid-template-columns: 1fr; } .collection-search, .collection-search input { width: 100%; } .collection-filters button { padding: 8px 11px; } .collection-description { font-size: 14px; } }
 @media (prefers-reduced-motion: reduce) { .bookmark-card { transition: none; } }
+
+/* Match the new editorial homepage palette and typography. */
+.bookmarks-page { width:min(1190px,92vw); padding-top:38px; }
+.collection-intro { padding-bottom:32px; }
+.collection-eyebrow { color:#b94280; font-weight:800; font-family:"Space Grotesk",sans-serif; }
+.collection-intro h1 { color:#27233e; font-weight:800; letter-spacing:-.05em; font-size:clamp(33px,4.1vw,54px); }
+.collection-intro h1 span { color:#bd4180; }
+.collection-description { color:#777589; }
+.collection-total strong { color:#5c46b2; }
+.collection-filters button { border:1px solid #e7e4f0; background:#f6f4fa; color:#6a6383; }
+.collection-filters button.selected { background:#5741ac; border-color:#5741ac; color:white; }
+.collection-filters button:hover:not(.selected) { background:#ede7f8; }
+.collection-search { background:#fff; border-color:#e7e3ef; }
+.collection-search:focus-within { outline-color:#9881da; }
+.bookmark-card { border-color:#e7e3ef; box-shadow:none; background:#fff; }
+.bookmark-card:hover { border-color:#ac97de; box-shadow:0 13px 25px rgba(51,39,112,.09); }
+.bookmark-card h2 { color:#28243f; font-size:19px; }
+.bookmark-card p { color:#68667c; }
+.bookmark-card__bottom span:last-child { color:#5a42ab; }
+
 </style>

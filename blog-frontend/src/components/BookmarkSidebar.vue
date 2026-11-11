@@ -1,115 +1,43 @@
 <script setup>
 import { bookmarks } from "../data/bookmarks";
-
-defineProps({
-  embedded: {
-    type: Boolean,
-    default: false
-  }
-});
+defineProps({ embedded:{type:Boolean,default:false} });
 </script>
-
 <template>
-  <section
-    class="bookmark-sidebar"
-    :class="{ 'bookmark-sidebar--embedded': embedded }"
-    aria-label="网站收藏"
-  >
-    <header class="bookmark-sidebar__header">
-      <div>
-        <p class="bookmark-sidebar__eyebrow">CURATED LINKS</p>
-        <h2>网站收藏</h2>
-      </div>
-      <span class="bookmark-sidebar__count" :aria-label="`共 ${bookmarks.length} 个收藏`">{{ bookmarks.length }}</span>
+  <section class="bookmark-rail" :class="{ 'bookmark-rail--embedded': embedded }" aria-labelledby="bookmark-heading">
+    <header class="bookmark-rail__header">
+      <div><p class="bookmark-rail__kicker">HANDPICKED LINKS</p><h2 id="bookmark-heading">网站收藏<span>.</span></h2></div>
+      <span class="bookmark-rail__count" :aria-label="'共 ' + bookmarks.length + ' 个收藏'">{{ bookmarks.length }}</span>
     </header>
-    <p class="bookmark-sidebar__intro">常用工具、技术文档与阅读发现</p>
-
-    <nav class="bookmark-sidebar__list" aria-label="收藏网站列表">
-      <a
-        v-for="site in bookmarks"
-        :key="site.url"
-        :href="site.url"
-        :title="site.description"
-        :aria-label="`${site.name}（${site.category}，在新标签页打开）`"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="bookmark-sidebar__item"
-      >
-        <span class="bookmark-sidebar__mark" :style="{ '--bookmark-color': site.color }" aria-hidden="true">
-          {{ site.mark }}
-        </span>
-        <span class="bookmark-sidebar__meta">
-          <strong>{{ site.name }}</strong>
-          <small>{{ site.category }}</small>
-        </span>
-        <span class="bookmark-sidebar__arrow" aria-hidden="true">↗</span>
+    <p class="bookmark-rail__intro">常用工具、技术文档与阅读发现。</p>
+    <nav class="bookmark-rail__list" aria-label="全部收藏网站">
+      <a v-for="site in bookmarks" :key="site.url" class="bookmark-rail__item" :href="site.url" :title="site.description" target="_blank" rel="noopener noreferrer">
+        <span class="bookmark-rail__icon" :style="{ '--bookmark-color':site.color }" aria-hidden="true">{{ site.mark }}</span>
+        <span class="bookmark-rail__info"><strong>{{ site.name }}</strong><small>{{ site.category }}</small></span>
+        <span class="bookmark-rail__arrow" aria-hidden="true">↗</span>
       </a>
     </nav>
+    <router-link to="/bookmarks" class="bookmark-rail__all">分类查看全部收藏 <span aria-hidden="true">→</span></router-link>
   </section>
 </template>
-
 <style scoped>
-.bookmark-sidebar {
-  position: sticky;
-  top: 24px;
-  max-height: calc(100vh - 48px);
-  overflow-y: auto;
-  min-width: 0;
-  padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: rgba(255, 253, 250, 0.92);
-  box-shadow: var(--shadow);
-  scrollbar-width: thin;
-}
-.bookmark-sidebar__header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.bookmark-sidebar__eyebrow { margin: 0 0 6px; color: var(--brand-2); font: 10px/1.4 "Space Grotesk", sans-serif; letter-spacing: 0.13em; }
-.bookmark-sidebar__header h2 { margin: 0; font-size: 19px; }
-.bookmark-sidebar__count { color: var(--brand-2); font: 600 18px/1 "Space Grotesk", sans-serif; }
-.bookmark-sidebar__intro { color: var(--muted); font-size: 12px; line-height: 1.7; margin: 10px 0 16px; }
-.bookmark-sidebar__list { display: flex; flex-direction: column; gap: 8px; }
-.bookmark-sidebar__item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fff;
-  transition: border-color .2s, background-color .2s;
-}
-.bookmark-sidebar__item:hover { border-color: var(--brand-2); background: rgba(15, 118, 110, .04); }
-.bookmark-sidebar__item:focus-visible { outline: 2px solid var(--brand-2); outline-offset: 2px; }
-.bookmark-sidebar__mark {
-  flex: 0 0 35px;
-  display: grid;
-  place-items: center;
-  min-height: 35px;
-  border-radius: 9px;
-  background: var(--bookmark-color);
-  color: white;
-  font: 600 10px/1 "Space Grotesk", sans-serif;
-}
-.bookmark-sidebar__meta { flex: 1; min-width: 0; }
-.bookmark-sidebar__meta strong {
-  display: block;
-  font-size: 12.5px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-.bookmark-sidebar__meta small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
-.bookmark-sidebar__arrow { align-self: flex-start; color: var(--brand-2); font-size: 13px; }
-.bookmark-sidebar--embedded {
-  position: static;
-  max-height: none;
-  overflow: visible;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-@media (max-width: 960px) {
-  .bookmark-sidebar { position: static; max-height: none; overflow: visible; }
-}
+.bookmark-rail{min-width:0;position:relative}
+.bookmark-rail__header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.bookmark-rail__kicker{margin:0 0 11px;color:#bb3b7d;font:800 11px/1.4 "Space Grotesk",sans-serif;letter-spacing:.13em}
+.bookmark-rail__header h2{font-size:21px;line-height:1.3;font-weight:800;letter-spacing:-.04em;color:#26223f;margin:0}
+.bookmark-rail__header h2 span{color:#bb447f}
+.bookmark-rail__count{font:800 17px "Space Grotesk",sans-serif;color:#5b46ac;background:#f1edfa;border-radius:8px;padding:3px 9px}
+.bookmark-rail__intro{font-size:12px;color:#808093;line-height:1.75;margin:10px 0 14px}
+.bookmark-rail__list{display:flex;flex-direction:column;max-height:475px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#d6d1e7 transparent}
+.bookmark-rail__item{display:flex;align-items:center;gap:10px;min-height:55px;padding:9px 2px;border-bottom:1px solid #eeeef4;transition:background-color .17s}
+.bookmark-rail__item:hover{background:#fbfaff}
+.bookmark-rail__icon{flex:0 0 35px;width:35px;height:35px;display:grid;place-items:center;border-radius:10px;color:#fff;background:var(--bookmark-color);font:800 10px "Space Grotesk",sans-serif}
+.bookmark-rail__info{min-width:0;flex:1}
+.bookmark-rail__info strong{display:block;color:#38344f;font:700 12px/1.5 "DM Sans","Noto Sans SC",sans-serif;overflow-wrap:anywhere}
+.bookmark-rail__info small{display:block;color:#8e8b9d;font-size:10px;margin-top:2px}
+.bookmark-rail__arrow{color:#8676af;align-self:center;transition:transform .18s}
+.bookmark-rail__item:hover .bookmark-rail__arrow{transform:translate(2px,-2px)}
+.bookmark-rail__all{display:inline-flex;gap:7px;margin-top:14px;color:#5944af;font:800 12px/1.5 "DM Sans","Noto Sans SC",sans-serif}
+.bookmark-rail a:focus-visible{outline:3px solid #a18ddd;outline-offset:2px;border-radius:4px}
+.bookmark-rail--embedded .bookmark-rail__list{max-height:350px}
+@media(prefers-reduced-motion:reduce){.bookmark-rail__arrow,.bookmark-rail__item{transition:none}}
 </style>

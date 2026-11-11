@@ -90,8 +90,8 @@ const internships = [
     </ul>
 
     <div class="profile__links">
-      <a href="mailto:hello@example.com">Email</a>
-      <a href="https://github.com" target="_blank" rel="noreferrer">GitHub</a>
+      <router-link to="/">文章</router-link>
+      <a href="https://github.com/wynneyin" target="_blank" rel="noopener noreferrer">GitHub</a>
     </div>
 
 
