@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../api/client";
 import KnowledgeGraph from "../components/KnowledgeGraph.vue";
+import BookmarkSidebar from "../components/BookmarkSidebar.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -181,6 +182,8 @@ onMounted(() => {
       </article>
 
       <aside v-if="relatedArticles.length || article" class="article-related">
+        <BookmarkSidebar embedded />
+        <div class="article-related__divider" aria-hidden="true"></div>
         <KnowledgeGraph
           v-if="article"
           :current-slug="article.slug"
@@ -208,3 +211,11 @@ onMounted(() => {
     </div>
   </main>
 </template>
+
+<style scoped>
+.article-related { max-height: calc(100vh - 48px); overflow-y: auto; scrollbar-width: thin; }
+.article-related__divider { margin-top: 20px; border-top: 1px solid var(--line); }
+@media (max-width: 960px) {
+  .article-related { max-height: none; overflow: visible; }
+}
+</style>
