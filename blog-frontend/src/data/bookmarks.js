@@ -8,5 +8,7 @@ export const bookmarks = [
   { name: "arXiv", url: "https://arxiv.org", category: "学术研究", description: "追踪计算机科学、数学与密码学等领域的论文和新想法。", mark: "ar", color: "#9b493b" },
   { name: "爱好者周刊", url: "https://www.ruanyifeng.com/blog/weekly/", category: "阅读发现", description: "阮一峰的科技爱好者周刊，收集有趣的技术、工具与见闻。", mark: "阅", color: "#b45309" },
   { name: "kern roofline", url: "https://medal-active-attempting-dee.trycloudflare.com/", category: "开发工具", description: "基于 kern-serve 的 CUPTI 运行轨迹，分析 GPU Kernel 的 Roofline 效率、算子耗时与不同推理形状下的性能表现。", mark: "KR", color: "#2563eb" },
-  { name: "Modal GPU Glossary · Streaming Multiprocessor", url: "https://modal.com/gpu-glossary/device-hardware/streaming-multiprocessor", category: "技术文档", description: "介绍 NVIDIA GPU 的流式多处理器（SM）、Warp 调度、线程并发与延迟隐藏机制。", mark: "SM", color: "#4f46e5" }
+  { name: "Modal GPU Glossary · Streaming Multiprocessor", url: "https://modal.com/gpu-glossary/device-hardware/streaming-multiprocessor", category: "技术文档", description: "介绍 NVIDIA GPU 的流式多处理器（SM）、Warp 调度、线程并发与延迟隐藏机制。", mark: "SM", color: "#4f46e5" },
+  { name: "HuggingArch · 模型架构对比", url: "https://www.huggingarch.com/#sub=compare&m=deepseek-ai%2FDeepSeek-V3%7Cdeepseek-ai%2FDeepSeek-V3.2", category: "开发工具", description: "对比 Hugging Face 模型架构与参数，估算权重、FLOPs、KV Cache、显存需求和推理吞吐；预设 DeepSeek-V3 与 V3.2 对比。", mark: "HA", color: "#d97706" },
+  { name: "nsys-viewer", url: "https://gau-nernst.github.io/nsys-viewer/", category: "开发工具", description: "在浏览器中查看 Nsight Systems 导出的 SQLite Trace，分析 GPU Kernel 时间线、设备与 Stream、耗时及调用分布。", mark: "NS", color: "#0f766e" }
 ];
