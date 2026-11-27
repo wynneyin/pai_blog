@@ -23,7 +23,7 @@
       "stock": 9999,
       "stockText": "充足",
       "sold": 0,
-      "cover": "/shop/relay-10.svg",
+      "cover": "/shop-assets/relay-10.svg",
       "relayPlanId": "p10"
     },
     {
@@ -37,7 +37,7 @@
       "stock": 9999,
       "stockText": "充足",
       "sold": 0,
-      "cover": "/shop/relay-50.svg",
+      "cover": "/shop-assets/relay-50.svg",
       "relayPlanId": "p50"
     },
     {
@@ -51,7 +51,7 @@
       "stock": 9999,
       "stockText": "充足",
       "sold": 0,
-      "cover": "/shop/relay-200.svg",
+      "cover": "/shop-assets/relay-200.svg",
       "relayPlanId": "p200"
     },
     {
@@ -65,7 +65,7 @@
       "stock": 9999,
       "stockText": "充足",
       "sold": 0,
-      "cover": "/shop/relay-1000.svg",
+      "cover": "/shop-assets/relay-1000.svg",
       "relayPlanId": "p1000"
     }
   ],
