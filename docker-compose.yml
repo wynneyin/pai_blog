@@ -4,9 +4,17 @@ services:
     container_name: blog-backend
     environment:
       ARTICLES_PATH: /app/articles
-      BLOG_CORS_ALLOWED_ORIGINS: http://localhost
+      BLOG_CORS_ALLOWED_ORIGINS: ${BLOG_CORS_ALLOWED_ORIGINS:-http://localhost}
+      BLOG_ADMIN_TOKEN: "${BLOG_ADMIN_TOKEN:?请先设置 BLOG_ADMIN_TOKEN（后台接口令牌）}"
+      RELAY_CATALOG_PATH: /app/shop/relay.json
+      RELAY_DATA_PATH: /app/data/relay-store.json
+      RELAY_UPSTREAM_URL: ${RELAY_UPSTREAM_URL:-}
+      RELAY_UPSTREAM_KEY: ${RELAY_UPSTREAM_KEY:-}
+      RELAY_ALLOW_SELF_TOPUP: "false"
     volumes:
       - ./articles:/app/articles
+      - ./shop:/app/shop:ro
+      - ./data:/app/data
     ports:
       - "8080:8080"
     restart: always

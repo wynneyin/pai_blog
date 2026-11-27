@@ -48,6 +48,8 @@ Docker 模式需 Docker Compose v2；PM2 模式需现有的 `blog-backend` 进�
 - 使用现有自动拉取脚本相同的文件锁，避免同时修改服务器工作区。
 - 过期提交不会覆盖更新的 `main`；不能快进、源代码有本地修改或运行方式未知时停止。
 - 保留服务器 `.env` / `.env.prod`、`blog-frontend/nginx.conf` 和 `docker-compose.yml` 的本地配置；不强制覆盖 Git 合并冲突。部署前将 Nginx 和 Compose 配置备份到 `.git/deploy-config-backups/`；`.env.prod` 存在时供 Compose 使用。
+- 服务器 `.env.prod` 必须设置 `BLOG_ADMIN_TOKEN`（旧部署若为空，先用 `openssl rand -hex 32` 补一个随机值），
+  否则 Compose 会拒绝启动；PM2 部署由 `deploy-lite.sh` 自动生成随机令牌。
 - 前置检查失败不会进入部署；镜像构建失败不会执行容器替换。
 - 更新服务时可能有短暂中断；健康检查失败会标记失败，目前不自动回滚。
 - 不执行 `git reset --hard`、`docker compose down`、volume 删除或全局镜像清理。

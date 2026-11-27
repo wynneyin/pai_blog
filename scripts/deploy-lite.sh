@@ -11,6 +11,11 @@ GREEN='\033[0;32m'
 NC='\033[0m'
 log() { echo -e "${GREEN}[deploy]${NC} $1"; }
 
+# 生成随机后台令牌；只写入 .env，不打印到终端
+gen_admin_token() {
+  node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))"
+}
+
 # 1. 安装 Node.js
 if ! command -v node &>/dev/null; then
   log "安装 Node.js 20..."
@@ -49,15 +54,25 @@ if [ ! -f "$ENV_FILE" ]; then
   SERVER_IP=$(curl -s ifconfig.me || echo "127.0.0.1")
   cat > "$ENV_FILE" << EOF
 BLOG_CORS_ALLOWED_ORIGINS=http://${SERVER_IP}
-BLOG_ADMIN_TOKEN=change_this_token
+BLOG_ADMIN_TOKEN=$(gen_admin_token)
 EOF
+  chmod 600 "$ENV_FILE"
   echo ""
-  echo ">>> 已自动生成 .env，请确认内容："
-  cat "$ENV_FILE"
+  echo ">>> 已自动生成 .env，BLOG_ADMIN_TOKEN 为随机令牌，请妥善保管（不会再次显示）。"
   echo ""
 fi
 
 source "$ENV_FILE"
+
+# 旧版 .env 可能没有后台令牌；为空时后台接口不鉴权，必须补一个随机值。
+if [ -z "${BLOG_ADMIN_TOKEN:-}" ]; then
+  log "BLOG_ADMIN_TOKEN 为空，生成随机令牌并写入 .env..."
+  printf '\nBLOG_ADMIN_TOKEN=%s\n' "$(gen_admin_token)" >> "$ENV_FILE"
+  source "$ENV_FILE"
+fi
+
+# .env 含后台令牌，确保仅所有者可读。
+chmod 600 "$ENV_FILE" 2>/dev/null || true
 
 # 7. 启动/重启后端
 log "启动后端..."
@@ -89,6 +104,15 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /v1/ {
+        proxy_pass http://127.0.0.1:8080/v1/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
     }
 }
 NGINX

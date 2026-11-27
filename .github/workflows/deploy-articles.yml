@@ -150,7 +150,36 @@ jobs:
             cp -p blog-frontend/nginx.conf "$config_backup/blog-frontend/nginx.conf"
             cp -p docker-compose.yml "$config_backup/docker-compose.yml"
             echo 'Saved a backup of the existing production configuration.'
+            # .env.prod is intentionally not in Git. Ensure the relay/blog
+            # admin endpoints have a strong token before Compose starts.
+            touch .env.prod
+            chmod 600 .env.prod
+            current_token="$(sed -n 's/^BLOG_ADMIN_TOKEN=//p' .env.prod | tail -n 1)"
+            if [ "${#current_token}" -lt 32 ]; then
+              admin_token="$(openssl rand -hex 32)"
+              tmp_env="$(mktemp)"
+              grep -v '^BLOG_ADMIN_TOKEN=' .env.prod > "$tmp_env" || true
+              printf 'BLOG_ADMIN_TOKEN=%s\n' "$admin_token" >> "$tmp_env"
+              chmod 600 "$tmp_env"
+              mv "$tmp_env" .env.prod
+              echo 'Set a strong BLOG_ADMIN_TOKEN in .env.prod (value not printed).'
+            fi
+            if ! grep -q '^BLOG_CORS_ALLOWED_ORIGINS=' .env.prod; then
+              printf 'BLOG_CORS_ALLOWED_ORIGINS=https://wynneyin.site\n' >> .env.prod
+            fi
+            unset current_token admin_token
+            # The server customises nginx.conf and docker-compose.yml for TLS
+            # and port 443. Re-apply those local changes on top of the release
+            # commit instead of letting the fast-forward refuse to run.
+            stashed=0
+            if ! git diff --quiet -- docker-compose.yml blog-frontend/nginx.conf; then
+              git stash push -m "deploy-local-config-$DEPLOY_COMMIT" -- docker-compose.yml blog-frontend/nginx.conf
+              stashed=1
+            fi
             git merge --ff-only "$DEPLOY_COMMIT"
+            if [ "$stashed" = 1 ]; then
+              git stash pop
+            fi
             test "$(git rev-parse HEAD)" = "$DEPLOY_COMMIT"
             bash scripts/deploy.sh "$DEPLOY_BUNDLE" "$DEPLOY_COMMIT"
 
@@ -163,6 +192,11 @@ jobs:
             "${PUBLIC_SITE_URL%/}/" -o .ci-artifacts/live-index.html
           curl -fLSs --max-time 20 --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors \
             "${PUBLIC_SITE_URL%/}/api/articles?page=1&pageSize=1" -o .ci-artifacts/live-api.json
+          curl -fLSs --max-time 20 --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors \
+            "${PUBLIC_SITE_URL%/}/api/relay/catalog" -o .ci-artifacts/live-relay.json
+          v1_status="$(curl -sS -o .ci-artifacts/live-v1.json -w '%{http_code}' --max-time 20 --retry 5 --retry-delay 3 --retry-connrefused \
+            "${PUBLIC_SITE_URL%/}/v1/models")"
+          test "$v1_status" = "401"
           python3 - <<'PY'
           import json
           import re
@@ -173,5 +207,11 @@ jobs:
           assert assets and all(asset in actual for asset in assets), 'Public homepage is serving an older frontend build'
           payload = json.loads(Path('.ci-artifacts/live-api.json').read_text())
           assert payload.get('code') == 200 or payload.get('success') is True, 'Public article API returned an application error'
-          print('Public homepage serves this build; article API is healthy.')
+          relay = json.loads(Path('.ci-artifacts/live-relay.json').read_text())
+          relay_data = relay.get('data') or {}
+          assert relay.get('code') == 200 or relay.get('success') is True, 'Relay catalog API returned an application error'
+          assert isinstance(relay_data.get('models'), list) and relay_data['models'], 'Relay catalog is empty'
+          v1 = json.loads(Path('.ci-artifacts/live-v1.json').read_text())
+          assert v1.get('error', {}).get('code') == 'invalid_api_key', 'Relay /v1 endpoint did not reject an anonymous request'
+          print('Public homepage serves this build; article, relay catalog and /v1 APIs are healthy.')
           PY

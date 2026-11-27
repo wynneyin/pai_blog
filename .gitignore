@@ -3,3 +3,6 @@ blog-backend-node/node_modules/
 blog-backend/target/
 .DS_Store
 **/.DS_Store
+
+# shop/relay runtime data
+/data/

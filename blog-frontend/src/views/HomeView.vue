@@ -7,6 +7,7 @@ import ArticleCard from "../components/ArticleCard.vue";
 import PaginationNav from "../components/PaginationNav.vue";
 import TagCloud from "../components/TagCloud.vue";
 import BookmarkSidebar from "../components/BookmarkSidebar.vue";
+import FriendLinks from "../components/FriendLinks.vue";
 
 const loading = ref(false);
 const error = ref("");
@@ -108,6 +109,7 @@ onUnmounted(() => { if(keywordTimer) clearTimeout(keywordTimer); });
             <CategoryTabs :categories="categories" :active-category="query.category" @change="onCategoryChange" />
           </section>
           <BookmarkSidebar />
+          <FriendLinks />
           <div v-if="tags.length" class="home-rail__tags">
             <TagCloud :tags="tags" :active-tag="query.tag" @change="onTagChange" />
           </div>

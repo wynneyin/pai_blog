@@ -89,7 +89,11 @@ published: true
 
 ## Docker 上线
 
+先创建 `.env` 并设置后台令牌，未设置时 Compose 会拒绝启动：
+
 ```bash
+grep -q '^BLOG_ADMIN_TOKEN=.' .env 2>/dev/null || \
+  printf 'BLOG_ADMIN_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env
 docker compose up -d --build
 ```
 
@@ -103,7 +107,8 @@ docker compose up -d --build
 ## 常用环境变量
 
 - `ARTICLES_PATH` 文章目录（容器内默认 `/app/articles`）
-- `BLOG_ADMIN_TOKEN` 管理刷新接口的 token（可选）
+- `BLOG_ADMIN_TOKEN` 后台接口令牌（缓存刷新、中转后台）；Docker 部署必填，
+  用 `openssl rand -hex 32` 生成，`scripts/deploy-lite.sh` 会自动生成
 - `BLOG_CORS_ALLOWED_ORIGINS` 允许跨域来源
 
 ## 生产部署文档（2核2G）

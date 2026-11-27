@@ -17,6 +17,7 @@ watch(() => route.fullPath, () => { menuOpen.value = false; });
         <router-link to="/" class="site-header__link" exact-active-class="site-header__link--active">首页</router-link>
         <router-link :to="{ path: '/', hash: '#articles' }" class="site-header__link">文章</router-link>
         <router-link to="/bookmarks" class="site-header__link" active-class="site-header__link--active">收藏</router-link>
+        <router-link to="/relay" class="site-header__link" active-class="site-header__link--active">中转</router-link>
         <router-link to="/about" class="site-header__link" active-class="site-header__link--active">关于</router-link>
         <a class="site-header__github" href="https://github.com/wynneyin" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a>
       </nav>

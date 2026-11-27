@@ -1,0 +1,194 @@
+{
+  "brand": {
+    "name": "Wynne Relay",
+    "baseUrl": "",
+    "consoleUrl": "/relay/console",
+    "supportUrl": ""
+  },
+  "stats": [
+    { "value": "12", "label": "精选模型" },
+    { "value": "99.9%", "label": "可用性目标" },
+    { "value": "< 2s", "label": "首字延迟参考" },
+    { "value": "7×24", "label": "在线下单" }
+  ],
+  "models": [
+    {
+      "name": "gpt-4o-mini",
+      "vendor": "OpenAI",
+      "context": "128K",
+      "input": 1.08,
+      "output": 4.32,
+      "tag": "性价比"
+    },
+    {
+      "name": "gpt-4o",
+      "vendor": "OpenAI",
+      "context": "128K",
+      "input": 18,
+      "output": 72,
+      "tag": "通用"
+    },
+    {
+      "name": "claude-sonnet-4",
+      "vendor": "Anthropic",
+      "context": "200K",
+      "input": 21.6,
+      "output": 108,
+      "tag": "长文本"
+    },
+    {
+      "name": "claude-opus-4",
+      "vendor": "Anthropic",
+      "context": "200K",
+      "input": 108,
+      "output": 540,
+      "tag": "旗舰"
+    },
+    {
+      "name": "gemini-2.5-flash",
+      "vendor": "Google",
+      "context": "1M",
+      "input": 2.16,
+      "output": 18,
+      "tag": "超长上下文"
+    },
+    {
+      "name": "gemini-2.5-pro",
+      "vendor": "Google",
+      "context": "1M",
+      "input": 9,
+      "output": 72,
+      "tag": "超长上下文"
+    },
+    {
+      "name": "DeepSeek-V3.2",
+      "vendor": "DeepSeek",
+      "context": "128K",
+      "input": 1.94,
+      "output": 2.95,
+      "tag": "低价"
+    },
+    {
+      "name": "qwen3-235b-a22b",
+      "vendor": "Alibaba",
+      "context": "128K",
+      "input": 14.4,
+      "output": 144,
+      "tag": "中文强"
+    },
+    {
+      "name": "glm-4.5",
+      "vendor": "Zhipu",
+      "context": "128K",
+      "input": 4.32,
+      "output": 15.84,
+      "tag": "中文"
+    },
+    {
+      "name": "GLM-4.7",
+      "vendor": "Zhipu",
+      "context": "200K",
+      "input": 25.2,
+      "output": 100.8,
+      "tag": "新旗舰"
+    },
+    {
+      "name": "Kimi-K2-0905",
+      "vendor": "Moonshot",
+      "context": "256K",
+      "input": 3.96,
+      "output": 15.77,
+      "tag": "长上下文"
+    },
+    {
+      "name": "MiniMax-M2.7",
+      "vendor": "MiniMax",
+      "context": "200K",
+      "input": 15.12,
+      "output": 60.48,
+      "tag": "高性价比"
+    }
+  ],
+  "plans": [
+    {
+      "id": "p10",
+      "name": "入门充值",
+      "price": 10,
+      "credit": 10,
+      "bonus": "到账 10 元额度",
+      "hot": false,
+      "perks": ["全模型可用", "按量计费", "无有效期限制"]
+    },
+    {
+      "id": "p50",
+      "name": "标准充值",
+      "price": 50,
+      "credit": 55,
+      "bonus": "到账 55 元额度 · 赠 10%",
+      "hot": true,
+      "perks": ["全模型可用", "优先队列", "工单支持"]
+    },
+    {
+      "id": "p200",
+      "name": "进阶充值",
+      "price": 200,
+      "credit": 230,
+      "bonus": "到账 230 元额度 · 赠 15%",
+      "hot": false,
+      "perks": ["全模型可用", "专属通道", "工单优先"]
+    },
+    {
+      "id": "p1000",
+      "name": "企业充值",
+      "price": 1000,
+      "credit": 1200,
+      "bonus": "到账 1200 元额度 · 赠 20%",
+      "hot": false,
+      "perks": ["对公开票", "专属对接人", "用量报表"]
+    }
+  ],
+  "faqs": [
+    {
+      "q": "什么是 API 中转站？",
+      "a": "中转站把多家模型厂商的接口统一成一个 OpenAI 兼容的地址。你只需要改 base_url 和 API Key，就能在现有代码里切换 GPT、Claude、Gemini 等模型，无需分别申请各平台账号。"
+    },
+    {
+      "q": "如何接入？",
+      "a": "注册后进入控制台，充值并创建令牌（API Key）。把请求地址改为本页展示的 base_url，把 Key 填进 OpenAI SDK 的 api_key 即可，现有 OpenAI 代码通常只需改两行。"
+    },
+    {
+      "q": "额度会过期吗？",
+      "a": "充值额度长期有效，按实际调用量扣费，用多少扣多少，余额和每一笔用量都可以在控制台查看。"
+    },
+    {
+      "q": "支持哪些客户端？",
+      "a": "任何支持自定义 OpenAI Base URL 的客户端都可以，例如 ChatBox、Cherry Studio、NextChat、LangChain、Dify 等。"
+    },
+    {
+      "q": "调用失败怎么排查？",
+      "a": "先确认 base_url 是否带 /v1、Key 是否复制完整、模型名是否在控制台可用列表中，以及余额是否大于 0；仍有问题请带订单号或请求时间联系售后。"
+    }
+  ],
+  "codeSamples": [
+    {
+      "label": "cURL",
+      "language": "bash",
+      "code": "curl {baseUrl}/chat/completions \\\n  -H \"Authorization: Bearer $API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"model\": \"gpt-4o-mini\",\n    \"messages\": [{\"role\": \"user\", \"content\": \"你好\"}]\n  }'"
+    },
+    {
+      "label": "Python",
+      "language": "python",
+      "code": "from openai import OpenAI\n\nclient = OpenAI(\n    api_key=\"YOUR_API_KEY\",\n    base_url=\"{baseUrl}\",\n)\n\nresp = client.chat.completions.create(\n    model=\"gpt-4o-mini\",\n    messages=[{\"role\": \"user\", \"content\": \"你好\"}],\n)\nprint(resp.choices[0].message.content)"
+    },
+    {
+      "label": "Node.js",
+      "language": "javascript",
+      "code": "import OpenAI from \"openai\";\n\nconst client = new OpenAI({\n  apiKey: process.env.API_KEY,\n  baseURL: \"{baseUrl}\",\n});\n\nconst resp = await client.chat.completions.create({\n  model: \"gpt-4o-mini\",\n  messages: [{ role: \"user\", content: \"你好\" }],\n});\nconsole.log(resp.choices[0].message.content);"
+    }
+  ],
+  "notices": [
+    "充值额度长期有效，按实际调用量扣费。",
+    "创建令牌后请立即保存，完整 Key 只展示一次。",
+    "如遇调用失败，请先检查余额与模型名，再联系售后。"
+  ]
+}

@@ -92,8 +92,11 @@ cp .env.prod.example .env.prod
 
 ```env
 BLOG_CORS_ALLOWED_ORIGINS=https://你的域名
-BLOG_ADMIN_TOKEN=改成强密码token
+# 必填：用 openssl rand -hex 32 生成，不要使用固定或示例值
+BLOG_ADMIN_TOKEN=
 ```
+
+`BLOG_ADMIN_TOKEN` 是中转后台的接口令牌；留空时 Compose 会拒绝启动。
 
 ## 5. 启动生产服务
 
