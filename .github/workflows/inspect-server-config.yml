@@ -1,0 +1,44 @@
+name: Inspect server config
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Read server deployment configuration
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        env:
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/root/pai_blog' }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ vars.SERVER_PORT || '22' }}
+          fingerprint: ${{ secrets.SERVER_SSH_FINGERPRINT }}
+          envs: DEPLOY_PATH
+          script: |
+            set -eu
+            cd "$DEPLOY_PATH"
+            redact() {
+              sed -E 's/((TOKEN|KEY|PASSWORD|SECRET)[A-Z_]*[=:])[[:space:]]*.*/\1 <redacted>/Ig'
+            }
+            echo '=== git status ==='
+            git status --short
+            echo '=== local diff: docker-compose.yml ==='
+            git diff HEAD -- docker-compose.yml | redact
+            echo '=== local diff: nginx.conf ==='
+            git diff HEAD -- blog-frontend/nginx.conf
+            echo '=== docker-compose.yml ==='
+            redact < docker-compose.yml
+            echo '=== nginx.conf ==='
+            cat blog-frontend/nginx.conf
+            echo '=== .env.prod keys ==='
+            if [ -f .env.prod ]; then sed -E 's/=.*$/=<redacted>/' .env.prod; else echo '(missing)'; fi
+            echo '=== .env keys ==='
+            if [ -f .env ]; then sed -E 's/=.*$/=<redacted>/' .env; else echo '(missing)'; fi
