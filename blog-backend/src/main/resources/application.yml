@@ -15,6 +15,10 @@ articles:
 
 blog:
   admin-token: ${BLOG_ADMIN_TOKEN:}
+  shop:
+    catalog-path: ${SHOP_CATALOG_PATH:${user.dir}/shop/catalog.json}
+    data-path: ${SHOP_DATA_PATH:${user.dir}/data/shop-orders.json}
+    allow-self-pay: ${SHOP_ALLOW_SELF_PAY:true}
   relay:
     catalog-path: ${RELAY_CATALOG_PATH:${user.dir}/shop/relay.json}
     data-path: ${RELAY_DATA_PATH:${user.dir}/data/relay-store.json}

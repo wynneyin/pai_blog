@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-label="Relay Credits 1000 yuan">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b0b2e"/>
+      <stop offset="1" stop-color="#d6398f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.82" cy="0.22" r="0.6">
+      <stop offset="0" stop-color="#ffc2e2" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffc2e2" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="800" height="450" fill="url(#bg)"/>
+  <rect width="800" height="450" fill="url(#glow)"/>
+  <g stroke="#ffd4ea" stroke-opacity="0.16" fill="none">
+    <circle cx="650" cy="120" r="150"/>
+    <circle cx="650" cy="120" r="105"/>
+    <circle cx="650" cy="120" r="60"/>
+  </g>
+  <text x="64" y="214" font-family="Helvetica, Arial, sans-serif" font-size="112" font-weight="800" fill="#ffffff">¥1000</text>
+  <text x="68" y="272" font-family="Helvetica, Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="6" fill="#ffc2e2">RELAY CREDITS</text>
+  <text x="68" y="330" font-family="Helvetica, Arial, sans-serif" font-size="18" fill="#ffe3f1">Wynne Relay · pay as you go</text>
+  <text x="736" y="414" text-anchor="end" font-family="Helvetica, Arial, sans-serif" font-size="14" letter-spacing="3" fill="#ffd4ea">WYNNE.SITE</text>
+</svg>

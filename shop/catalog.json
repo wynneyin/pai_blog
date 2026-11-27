@@ -1,0 +1,84 @@
+{
+  "categories": [
+    {
+      "id": "relay",
+      "name": "中转额度",
+      "blurb": "购买后自动充入中转站余额，全模型通用，按实际用量扣费。"
+    },
+    {
+      "id": "bulk",
+      "name": "大额专区",
+      "blurb": "适合团队与长期使用，单笔 ¥200 起，赠送额度更高。"
+    }
+  ],
+  "products": [
+    {
+      "id": "relay-p10",
+      "categoryId": "relay",
+      "categoryIds": ["relay"],
+      "name": "中转额度 ¥10",
+      "subtitle": "到账 ¥10 · 全模型通用",
+      "price": 10,
+      "tag": "入门",
+      "stock": 9999,
+      "stockText": "充足",
+      "sold": 0,
+      "cover": "/shop/relay-10.svg",
+      "relayPlanId": "p10"
+    },
+    {
+      "id": "relay-p50",
+      "categoryId": "relay",
+      "categoryIds": ["relay"],
+      "name": "中转额度 ¥50",
+      "subtitle": "到账 ¥55 · 含赠送 ¥5",
+      "price": 50,
+      "tag": "推荐",
+      "stock": 9999,
+      "stockText": "充足",
+      "sold": 0,
+      "cover": "/shop/relay-50.svg",
+      "relayPlanId": "p50"
+    },
+    {
+      "id": "relay-p200",
+      "categoryId": "bulk",
+      "categoryIds": ["relay", "bulk"],
+      "name": "中转额度 ¥200",
+      "subtitle": "到账 ¥230 · 含赠送 ¥30",
+      "price": 200,
+      "tag": "进阶",
+      "stock": 9999,
+      "stockText": "充足",
+      "sold": 0,
+      "cover": "/shop/relay-200.svg",
+      "relayPlanId": "p200"
+    },
+    {
+      "id": "relay-p1000",
+      "categoryId": "bulk",
+      "categoryIds": ["relay", "bulk"],
+      "name": "中转额度 ¥1000",
+      "subtitle": "到账 ¥1200 · 含赠送 ¥200",
+      "price": 1000,
+      "tag": "企业",
+      "stock": 9999,
+      "stockText": "充足",
+      "sold": 0,
+      "cover": "/shop/relay-1000.svg",
+      "relayPlanId": "p1000"
+    }
+  ],
+  "payment": {
+    "alipayQr": "",
+    "wechatQr": "",
+    "contact": "GitHub @wynneyin",
+    "contactUrl": "https://github.com/wynneyin"
+  },
+  "notices": [
+    "下单时请填写中转站注册邮箱；管理员确认收款后，额度会自动充入该账户。",
+    "虚拟额度到账后不支持无理由退款，请确认邮箱和金额无误后再付款。",
+    "本商城目前为人工确认收款：下单后请通过帮助中心联系管理员获取收款方式。",
+    "如需大额采购或长期合作，请通过帮助中心联系，我们会提供单独报价。"
+  ]
+}

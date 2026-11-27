@@ -86,6 +86,30 @@ const router = createRouter({
       meta: { title: "中转后台" }
     },
     {
+      path: "/shop",
+      name: "shop",
+      component: () => import("../views/ShopView.vue"),
+      meta: { title: "额度商城" }
+    },
+    {
+      path: "/shop/orders",
+      name: "shop-orders",
+      component: () => import("../views/ShopOrdersView.vue"),
+      meta: { title: "订单查询" }
+    },
+    {
+      path: "/shop/help",
+      name: "shop-help",
+      component: () => import("../views/ShopHelpView.vue"),
+      meta: { title: "帮助中心" }
+    },
+    {
+      path: "/shop/admin",
+      name: "shop-admin",
+      component: () => import("../views/ShopAdminView.vue"),
+      meta: { title: "商城后台" }
+    },
+    {
       path: "/",
       name: "home",
       component: HomeView

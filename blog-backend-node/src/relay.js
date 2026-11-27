@@ -1354,4 +1354,97 @@ relayProxyRouter.use((err, _req, res, next) => {
   return undefined;
 });
 
-module.exports = { relayRouter, relayAdminRouter, relayProxyRouter };
+// ---------------------------------------------------------------------------
+// Shop fulfillment
+// ---------------------------------------------------------------------------
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function relayUserExists(email) {
+  const normalized = normalizeEmail(email);
+  if (!isValidEmail(normalized)) return false;
+  const store = readStore();
+  return store.users.some((user) => user && normalizeEmail(user.email) === normalized);
+}
+
+function shopCreditCents(planId, quantity) {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
+    throw httpError(400, '购买数量不合法');
+  }
+  const catalog = readCatalog();
+  const plan = catalog.plans.find((item) => item && item.id === planId);
+  if (!plan) throw httpError(400, '充值档位不存在');
+  return Math.round(plan.credit * 100) * quantity;
+}
+
+// A shop credit is one synchronous read-modify-write of the relay store, so
+// it cannot interleave with the synchronous section of a proxy charge. The
+// deterministic SHOP-<orderNo> record keeps retries idempotent.
+function creditShopOrder(email, planId, quantity, amountCents, shopOrderNo, method) {
+  const normalizedEmail = normalizeEmail(email);
+  if (!isValidEmail(normalizedEmail)) {
+    throw httpError(400, '中转站注册邮箱不正确');
+  }
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
+    throw httpError(400, '购买数量不合法');
+  }
+  const rawOrderNo = typeof shopOrderNo === 'string' ? shopOrderNo.trim() : '';
+  if (!rawOrderNo) throw httpError(400, '商城订单号不正确');
+  if (!Number.isInteger(amountCents) || amountCents < 0) {
+    throw httpError(400, '商城订单金额不正确');
+  }
+
+  const sourceOrderNo = `SHOP-${rawOrderNo}`;
+  const store = readStore();
+  const existing = findTopup(store, sourceOrderNo);
+  if (existing) return existing;
+
+  const user = store.users.find(
+    (item) => item && normalizeEmail(item.email) === normalizedEmail
+  );
+  if (!user) throw httpError(400, '该邮箱尚未注册中转站，请先注册');
+
+  const catalog = readCatalog();
+  const plan = catalog.plans.find((item) => item && item.id === planId);
+  if (!plan) throw httpError(400, '充值档位不存在');
+
+  const expectedAmount = Math.round(plan.price * 100) * quantity;
+  const creditCents = Math.round(plan.credit * 100) * quantity;
+  if (amountCents !== expectedAmount) {
+    throw httpError(400, '商城订单金额与充值档位不一致');
+  }
+
+  const normalizedMethod =
+    typeof method === 'string' ? method.trim().toLowerCase() : '';
+  const topup = {
+    orderNo: sourceOrderNo,
+    userId: user.id,
+    planId: plan.id,
+    planName: plan.name == null ? '' : String(plan.name),
+    amountCents: expectedAmount,
+    bonusCents: Math.max(0, creditCents - expectedAmount),
+    creditCents,
+    status: 'paid',
+    method: PAYMENT_METHODS.has(normalizedMethod) ? normalizedMethod : null,
+    createdAt: nowIso(),
+    paidAt: nowIso(),
+    cancelledAt: null
+  };
+
+  store.topups.push(topup);
+  const balance = Number.isFinite(user.balanceCents) ? user.balanceCents : 0;
+  user.balanceCents = balance + creditCents;
+  writeStore(store);
+  return topup;
+}
+
+module.exports = {
+  relayRouter,
+  relayAdminRouter,
+  relayProxyRouter,
+  relayUserExists,
+  shopCreditCents,
+  creditShopOrder
+};

@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const articles = require('./articles');
 const { relayRouter, relayAdminRouter, relayProxyRouter } = require('./relay');
+const { shopRouter, adminRouter: shopAdminRouter } = require('./shop');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -43,6 +44,8 @@ function fail(status, message) {
   return { success: false, data: null, message };
 }
 
+app.use('/api/shop', shopRouter);
+app.use('/api/admin/shop', shopAdminRouter);
 app.use('/api/relay', relayRouter);
 app.use('/api/admin/relay', relayAdminRouter);
 app.use('/v1', relayProxyRouter);

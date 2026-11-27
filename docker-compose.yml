@@ -6,6 +6,9 @@ services:
       ARTICLES_PATH: /app/articles
       BLOG_CORS_ALLOWED_ORIGINS: ${BLOG_CORS_ALLOWED_ORIGINS:-http://localhost}
       BLOG_ADMIN_TOKEN: "${BLOG_ADMIN_TOKEN:?请先设置 BLOG_ADMIN_TOKEN（后台接口令牌）}"
+      SHOP_CATALOG_PATH: /app/shop/catalog.json
+      SHOP_DATA_PATH: /app/data/shop-orders.json
+      SHOP_ALLOW_SELF_PAY: "false"
       RELAY_CATALOG_PATH: /app/shop/relay.json
       RELAY_DATA_PATH: /app/data/relay-store.json
       RELAY_UPSTREAM_URL: ${RELAY_UPSTREAM_URL:-}

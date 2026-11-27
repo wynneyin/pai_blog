@@ -650,6 +650,119 @@ public class RelayService {
         }
     }
 
+    /**
+     * True when the email belongs to an existing relay account. Used by the
+     * shop to reject credit orders before payment when the buyer has not
+     * registered yet.
+     */
+    public boolean relayUserExists(String email) {
+        String normalized = normalizeEmail(email);
+        if (!isValidEmail(normalized)) {
+            return false;
+        }
+        synchronized (storeLock) {
+            return findUserByEmail(readStore(), normalized) != null;
+        }
+    }
+
+    /** Credit in cents for a catalog plan multiplied by a shop quantity. */
+    public int shopCreditCents(String planId, int quantity) {
+        if (quantity < 1 || quantity > 99) {
+            throw RelayException.badRequest("购买数量不合法");
+        }
+        JsonNode plan = findPlan(getCatalog(), planId);
+        if (plan == null) {
+            throw RelayException.badRequest("充值档位不存在");
+        }
+        try {
+            return Math.multiplyExact(toCents(plan.get("credit")), quantity);
+        } catch (ArithmeticException e) {
+            throw catalogError("充值档位金额超出范围: " + textOf(plan.get("id")).trim());
+        }
+    }
+
+    /**
+     * Credits a relay account for a paid shop order and records a matching
+     * top-up. The deterministic SHOP-&lt;orderNo&gt; top-up makes retries
+     * idempotent, so a crash between the relay write and the shop write cannot
+     * credit the same order twice.
+     */
+    public RelayTopup creditShopOrder(String email, String planId, int quantity,
+                                      int amountCents, String shopOrderNo, String method) {
+        String normalizedEmail = normalizeEmail(email);
+        if (!isValidEmail(normalizedEmail)) {
+            throw RelayException.badRequest("中转站注册邮箱不正确");
+        }
+        if (quantity < 1 || quantity > 99) {
+            throw RelayException.badRequest("购买数量不合法");
+        }
+        String rawOrderNo = shopOrderNo == null ? "" : shopOrderNo.trim();
+        if (rawOrderNo.isEmpty()) {
+            throw RelayException.badRequest("商城订单号不正确");
+        }
+        if (amountCents < 0) {
+            throw RelayException.badRequest("商城订单金额不正确");
+        }
+        String sourceOrderNo = "SHOP-" + rawOrderNo;
+        String normalizedMethod = normalizePaymentMethod(method);
+
+        synchronized (storeLock) {
+            RelayStore store = readStore();
+            RelayTopup existing = findTopup(store, sourceOrderNo);
+            if (existing != null) {
+                return existing;
+            }
+
+            RelayUser user = findUserByEmail(store, normalizedEmail);
+            if (user == null) {
+                throw RelayException.badRequest("该邮箱尚未注册中转站，请先注册");
+            }
+
+            JsonNode plan = findPlan(getCatalog(), planId);
+            if (plan == null) {
+                throw RelayException.badRequest("充值档位不存在");
+            }
+            int planAmount;
+            int planCredit;
+            try {
+                planAmount = toCents(plan.get("price"));
+                planCredit = toCents(plan.get("credit"));
+            } catch (ArithmeticException e) {
+                throw catalogError("充值档位金额超出范围: " + textOf(plan.get("id")).trim());
+            }
+            int expectedAmount;
+            int creditCents;
+            try {
+                expectedAmount = Math.multiplyExact(planAmount, quantity);
+                creditCents = Math.multiplyExact(planCredit, quantity);
+            } catch (ArithmeticException e) {
+                throw RelayException.badRequest("购买数量不合法");
+            }
+            if (amountCents != expectedAmount) {
+                throw RelayException.badRequest("商城订单金额与充值档位不一致");
+            }
+
+            RelayTopup topup = RelayTopup.builder()
+                    .orderNo(sourceOrderNo)
+                    .userId(user.getId())
+                    .planId(textOf(plan.get("id")).trim())
+                    .planName(textOf(plan.get("name")))
+                    .amountCents(expectedAmount)
+                    .bonusCents(Math.max(0, creditCents - expectedAmount))
+                    .creditCents(creditCents)
+                    .status("paid")
+                    .method(normalizedMethod)
+                    .createdAt(nowIso())
+                    .paidAt(nowIso())
+                    .cancelledAt(null)
+                    .build();
+            store.getTopups().add(topup);
+            addCredit(user, creditCents);
+            writeStore(store);
+            return topup;
+        }
+    }
+
     public RelayTopup payTopup(String authorization, String orderNo, String method) {
         if (!allowSelfTopup) {
             throw RelayException.forbidden("请支付后联系管理员确认到账");

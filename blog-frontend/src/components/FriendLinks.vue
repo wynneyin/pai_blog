@@ -16,6 +16,20 @@
       </span>
       <span class="friend-links__arrow" aria-hidden="true">↗</span>
     </router-link>
+    <router-link
+      to="/shop"
+      target="_blank"
+      rel="noopener"
+      class="friend-links__item"
+      aria-label="Wynne Shop（在新标签页打开）"
+    >
+      <span class="friend-links__icon friend-links__icon--shop" aria-hidden="true">WS</span>
+      <span class="friend-links__info">
+        <strong>Wynne Shop</strong>
+        <small>中转额度包 · 确认后自动到账</small>
+      </span>
+      <span class="friend-links__arrow" aria-hidden="true">↗</span>
+    </router-link>
   </section>
 </template>
 
@@ -65,6 +79,12 @@
   background: #3ea4ec;
   color: #fff;
   font: 800 10px "Space Grotesk", sans-serif;
+}
+.friend-links__icon--shop {
+  background: #7c5cff;
+}
+.friend-links__item + .friend-links__item {
+  margin-top: 8px;
 }
 .friend-links__info {
   min-width: 0;
