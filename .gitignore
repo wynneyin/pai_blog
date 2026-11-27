@@ -6,3 +6,8 @@ blog-backend/target/
 
 # shop/relay runtime data
 /data/
+
+# production deployment secrets (.env stays tracked: Docker build settings only)
+.env.prod
+.env.local
+.env.*.local

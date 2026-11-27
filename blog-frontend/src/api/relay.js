@@ -163,6 +163,14 @@ export async function loginRelay(email, password) {
   return post("/relay/auth/login", { email, password });
 }
 
+export async function forgotRelayPassword(email) {
+  return post("/relay/auth/forgot-password", { email });
+}
+
+export async function resetRelayPassword(token, password) {
+  return post("/relay/auth/reset-password", { token, password });
+}
+
 export async function logoutRelay() {
   return post("/relay/auth/logout", {});
 }

@@ -25,13 +25,14 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/shop/catalog` | 商品目录 |
-| POST | `/api/shop/orders` | 下单，body `{productId, quantity, contact, note}`；响应含一次性 `lookupToken` |
+| POST | `/api/shop/orders` | 下单，body `{productId, quantity, contact, note}`；响应含一次性 `lookupToken` 与 `emailQueued` |
 | GET | `/api/shop/orders/{orderNo}` | 查询订单，需要查询凭证或绑定账户的 Bearer |
 | POST | `/api/shop/orders/{orderNo}/pay` | 确认支付（幂等），body `{method}`，鉴权同上 |
 | GET | `/api/admin/shop/orders?status=&limit=` | 后台订单列表，需要 `X-Admin-Token` |
 | POST | `/api/admin/shop/orders/{orderNo}/status` | 后台改状态 `{status}` |
 
-- 下单成功会在响应里返回一次性查询凭证 `lookupToken`（`so_` 加 64 位十六进制）。
+- 下单成功会在响应里返回一次性查询凭证 `lookupToken`（`so_` 加 64 位十六进制）
+  和 `emailQueued`（是否已把订单信息交给邮件服务）。
   服务端只保存它的 SHA-256 哈希（`lookupTokenHash`），之后任何接口、后台列表都不会
   再返回明文；前端只把凭证保存在买家本机。凭证丢失时，可登录下单邮箱对应的中转站账号查询。
 - 查询与支付订单必须二选一鉴权：
@@ -76,13 +77,38 @@
 ## 支付说明
 
 `POST /orders/{orderNo}/pay` 默认是「用户点了我已支付」的模拟确认。
-接入真实支付时，应改为支付平台回调验签后再把订单置为 `paid`，
-并把前端按钮换成跳转支付链接或展示动态收款码。
+接入真实支付时，应改为支付平台回调验签后再把订单置为 `paid`。
 
 生产 Compose 已设置 `SHOP_ALLOW_SELF_PAY=false`，该接口直接返回 403
 「请支付后联系管理员确认到账」，不会写任何数据；买家转账后联系管理员，
 由管理员在 `/shop/admin` 点「确认收款并到账」，额度才会进入中转站账户。
 本地演示可以设成 `true` 或删除该变量，恢复浏览器自助确认。
+
+### 收款方式配置
+
+下单弹窗和订单查询页都会读取 `catalog.json` 的 `payment` 字段，配置后即时生效：
+
+```json
+"payment": {
+  "alipayQr": "/shop-assets/alipay.png",
+  "wechatQr": "/shop-assets/wechat.png",
+  "links": {
+    "alipay": "https://qr.alipay.com/...",
+    "wechat": "wxp://..."
+  },
+  "note": "转账后请备注订单号后 6 位",
+  "contact": "GitHub @wynneyin",
+  "contactUrl": "https://github.com/wynneyin"
+}
+```
+
+- `alipayQr` / `wechatQr` 是可直接展示的图片地址（站内路径或 https URL），优先级最高。
+- `links` 用于没有图片时：前端用 `qrcode` 在浏览器里把链接生成二维码，
+  同时提供「在支付宝/微信中打开付款」按钮。两者都为空时显示人工收款提示，
+  引导买家通过 `contactUrl` 联系管理员。
+- `note` 会显示在收款码下方，适合放转账备注要求、到账时间等。
+- 生产环境当前为人工确认收款，配置收款码后仍然是「买家付款 → 管理员后台确认到账」，
+  不会改变资金流。
 
 | 环境变量 | 说明 | 默认 |
 | --- | --- | --- |
@@ -121,7 +147,7 @@ mvn spring-boot:run
 | 文件 | 作用 | 环境变量 | 默认路径 |
 | --- | --- | --- | --- |
 | `shop/relay.json` | 中转站展示目录（品牌、模型价目、充值档位、FAQ、代码示例） | `RELAY_CATALOG_PATH` | Node：仓库根目录下 `shop/relay.json`；Java：启动目录下 `shop/relay.json` |
-| `data/relay-store.json` | 用户、会话、API Key、充值单、用量记录（自动创建） | `RELAY_DATA_PATH` | 同上，`data/relay-store.json` |
+| `data/relay-store.json` | 用户、会话、API Key、充值单、用量记录、密码重置令牌（自动创建） | `RELAY_DATA_PATH` | 同上，`data/relay-store.json` |
 
 | 环境变量 | 说明 | 默认 |
 | --- | --- | --- |
@@ -148,6 +174,8 @@ mvn spring-boot:run
 | POST | `/api/relay/auth/register` | 注册 `{email, password}`，成功返回 `{token, user}` 并自动登录 |
 | POST | `/api/relay/auth/login` | 登录 `{email, password}`，成功返回 `{token, user}` |
 | POST | `/api/relay/auth/logout` | 退出当前会话，需要 Bearer |
+| POST | `/api/relay/auth/forgot-password` | 发送重置密码邮件，body `{email}`；未配置邮件服务返回 503 |
+| POST | `/api/relay/auth/reset-password` | 消费重置令牌设置新密码，body `{token, password}` |
 | GET | `/api/relay/me` | 当前用户信息，需要 Bearer |
 
 账户行为：
@@ -160,6 +188,39 @@ mvn spring-boot:run
   登录时邮箱不存在与密码错误统一返回 401「邮箱或密码错误」。
 - 登录/注册按 IP 限流：60 秒 30 次，超出返回 429「请求过于频繁，请稍后再试」。
 - 用户响应只含 `{id, email, balanceCents, createdAt}`，余额单位为分。
+
+### 邮件通知与密码重置
+
+邮件通过 SMTP 发送，默认关闭。必须同时满足 `MAIL_ENABLED=true`、`MAIL_HOST` 非空、
+`MAIL_FROM` 非空才会启用；启用后下单、额度到账、找回密码都会发纯文本邮件。
+发送是异步的，失败只记日志，不会让下单或充值请求失败。
+
+| 环境变量 | 说明 | 默认 |
+| --- | --- | --- |
+| `MAIL_ENABLED` | 总开关 | `false` |
+| `MAIL_HOST` | SMTP 主机 | 空 |
+| `MAIL_PORT` | SMTP 端口 | `587` |
+| `MAIL_USERNAME` / `MAIL_PASSWORD` | SMTP 账号；留空则不做认证 | 空 |
+| `MAIL_FROM` | 发件人地址 | 空 |
+| `MAIL_SMTP_AUTH` | 是否启用 SMTP 认证 | `true` |
+| `MAIL_STARTTLS` | 是否启用 STARTTLS | `true` |
+| `MAIL_SSL` | 是否直接使用 SSL（465 端口时设为 `true`） | `false` |
+| `SITE_BASE_URL` | 邮件里链接的站点根地址 | `https://wynneyin.site` |
+
+- 生产凭据放在服务器 `.env.prod`（已加入 `.gitignore`），Compose 会透传给后端；
+  修改后执行 `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d` 生效。
+- PM2 部署（`scripts/deploy-lite.sh`）会读取仓库根目录的 `.env`，并在存在时叠加 `.env.prod`。
+  修改邮件配置后需重跑该脚本，或执行 `pm2 restart blog-backend --update-env`；
+  CI 的 `pm2 reload` 会保留进程已有的环境变量。
+- 邮件服务未配置时，找回密码接口返回 503「邮件服务未配置，请联系管理员」；
+  商城下单仍会成功，响应里的 `emailQueued` 为 `false`，前端会提示保存查询凭证。
+- 找回密码：`pr_` 加 64 位十六进制令牌，库里只存 SHA-256；30 分钟有效、只能使用一次。
+  同一账户 60 秒内只发一封，且每小时最多 5 封；重复请求仍返回相同的成功响应。
+  已发出的旧链接在过期前保持有效，避免他人反复申请导致本人手里的链接失效。
+  未知邮箱、已禁用账户与正常发送的响应完全一致，避免被用来探测注册邮箱。
+- 重置成功会更新密码盐与哈希，并删除该账户的全部会话、API Key 和未使用重置令牌，
+  所有已登录设备与客户端都需要重新登录/更换 Key。重置链接使用 URL fragment（`#token=...`），
+  令牌不会出现在服务器访问日志或 Referer 里，提交成功后会从地址栏移除。
 
 ### 令牌（API Key）
 

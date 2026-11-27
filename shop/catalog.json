@@ -72,6 +72,11 @@
   "payment": {
     "alipayQr": "",
     "wechatQr": "",
+    "links": {
+      "alipay": "",
+      "wechat": ""
+    },
+    "note": "",
     "contact": "GitHub @wynneyin",
     "contactUrl": "https://github.com/wynneyin"
   },

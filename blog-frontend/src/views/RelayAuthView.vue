@@ -2,8 +2,10 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
+  forgotRelayPassword,
   loginRelay,
   registerRelay,
+  resetRelayPassword,
   saveRelaySession
 } from "../api/relay";
 
@@ -16,10 +18,19 @@ const email = ref("");
 const password = ref("");
 const confirmPassword = ref("");
 const error = ref("");
+const success = ref("");
 const submitting = ref(false);
+const showPassword = ref(false);
 
 const mode = computed(() => {
   const name = String(route.name || "").toLowerCase();
+  const path = String(route.path || "");
+  if (name.includes("forgot") || path.includes("forgot-password")) {
+    return "forgot";
+  }
+  if (name.includes("reset") || path.includes("reset-password")) {
+    return "reset";
+  }
   if (
     name.includes("sign-up") ||
     name.includes("signup") ||
@@ -27,40 +38,116 @@ const mode = computed(() => {
   ) {
     return "signup";
   }
-  return route.path.endsWith("sign-up") || route.path.endsWith("signup")
+  return path.endsWith("sign-up") || path.endsWith("signup")
     ? "signup"
     : "signin";
 });
 
 const isSignUp = computed(() => mode.value === "signup");
+const isForgot = computed(() => mode.value === "forgot");
+const isReset = computed(() => mode.value === "reset");
+
+const resetToken = computed(() => {
+  const raw = String(route.hash || "").replace(/^#/, "");
+  if (!raw) return "";
+  return (new URLSearchParams(raw).get("token") || "").trim();
+});
+
+const heading = computed(
+  () =>
+    ({
+      signin: "登录",
+      signup: "创建一个账户",
+      forgot: "找回密码",
+      reset: "设置新密码"
+    })[mode.value]
+);
+
+const lead = computed(
+  () =>
+    ({
+      signin: "欢迎回来，继续管理你的中转账户。",
+      signup: "注册后即可创建 API 令牌、查看用量和充值。",
+      forgot: "输入注册邮箱，我们会发送一封重置密码的邮件。",
+      reset: "设置新密码后，旧密码、所有登录会话和 API Key 都会失效。"
+    })[mode.value]
+);
+
 const switchPath = computed(() => {
+  if (isForgot.value || isReset.value) return "/relay/sign-in";
   const path = isSignUp.value ? "/relay/sign-in" : "/relay/sign-up";
   const redirect = route.query.redirect;
   return typeof redirect === "string" && redirect
     ? { path, query: { redirect } }
     : path;
 });
-const switchLead = computed(() => (isSignUp.value ? "已有账户？" : "没有账号？"));
-const switchLabel = computed(() => (isSignUp.value ? "登录" : "注册"));
+const switchLead = computed(() => {
+  if (isForgot.value || isReset.value) return "想起密码了？";
+  return isSignUp.value ? "已有账户？" : "没有账号？";
+});
+const switchLabel = computed(() => {
+  if (isForgot.value || isReset.value) return "返回登录";
+  return isSignUp.value ? "登录" : "注册";
+});
+
+const submitLabel = computed(() => {
+  if (submitting.value) {
+    return {
+      signin: "登录中…",
+      signup: "创建中…",
+      forgot: "发送中…",
+      reset: "提交中…"
+    }[mode.value];
+  }
+  return {
+    signin: "登录",
+    signup: "创建账户",
+    forgot: "发送重置邮件",
+    reset: "保存新密码"
+  }[mode.value];
+});
 
 watch(
-  () => route.path,
+  () => [route.path, route.hash],
   () => {
     error.value = "";
+    success.value = "";
     password.value = "";
     confirmPassword.value = "";
+    showPassword.value = false;
   }
 );
 
-function validate(emailValue) {
-  if (!emailValue) return "请输入邮箱";
-  if (emailValue.length > 120) return "邮箱长度不能超过 120 个字符";
-  if (!EMAIL_RE.test(emailValue)) return "邮箱格式不正确";
+function emailProblem(value) {
+  if (!value) return "请输入邮箱";
+  if (value.length > 120) return "邮箱长度不能超过 120 个字符";
+  if (!EMAIL_RE.test(value)) return "邮箱格式不正确";
+  return "";
+}
+
+function passwordProblem(value, label) {
+  if (!value) return `请输入${label}`;
+  if (value.length < 8 || value.length > 72) return "密码长度需为 8-72 位";
+  return "";
+}
+
+function validate() {
+  if (isForgot.value) return emailProblem(email.value.trim());
+  if (isReset.value) {
+    if (!resetToken.value) return "重置链接不完整，请重新申请找回密码";
+    const problem = passwordProblem(password.value, "新密码");
+    if (problem) return problem;
+    if (!confirmPassword.value) return "请再次输入新密码";
+    if (password.value !== confirmPassword.value) return "两次输入的密码不一致";
+    return "";
+  }
+
+  const emailIssue = emailProblem(email.value.trim());
+  if (emailIssue) return emailIssue;
   if (!password.value) return "请输入密码";
   if (isSignUp.value) {
-    if (password.value.length < 8 || password.value.length > 72) {
-      return "密码长度需为 8-72 位";
-    }
+    const problem = passwordProblem(password.value, "密码");
+    if (problem) return problem;
     if (!confirmPassword.value) return "请再次输入密码";
     if (password.value !== confirmPassword.value) {
       return "两次输入的密码不一致";
@@ -77,9 +164,10 @@ function redirectTarget() {
 }
 
 async function submit() {
+  if (submitting.value) return;
   error.value = "";
-  const emailValue = email.value.trim();
-  const problem = validate(emailValue);
+  success.value = "";
+  const problem = validate();
   if (problem) {
     error.value = problem;
     return;
@@ -87,9 +175,30 @@ async function submit() {
 
   submitting.value = true;
   try {
+    if (isForgot.value) {
+      await forgotRelayPassword(email.value.trim());
+      success.value = "forgot";
+      return;
+    }
+    if (isReset.value) {
+      await resetRelayPassword(resetToken.value, password.value);
+      success.value = "reset";
+      password.value = "";
+      confirmPassword.value = "";
+      // Drop the consumed token from the address bar and history entry.
+      if (typeof window !== "undefined" && window.history?.replaceState) {
+        window.history.replaceState(
+          window.history.state,
+          "",
+          route.fullPath.split("#")[0]
+        );
+      }
+      return;
+    }
+
     const data = isSignUp.value
-      ? await registerRelay(emailValue, password.value)
-      : await loginRelay(emailValue, password.value);
+      ? await registerRelay(email.value.trim(), password.value)
+      : await loginRelay(email.value.trim(), password.value);
     if (!data?.token) {
       throw new Error("登录响应缺少令牌，请稍后重试");
     }
@@ -114,63 +223,113 @@ async function submit() {
 
     <main class="auth-panel">
       <header class="auth-head">
-        <h1>{{ isSignUp ? "创建一个账户" : "登录" }}</h1>
+        <h1>{{ heading }}</h1>
+        <p class="auth-lead">{{ lead }}</p>
         <p class="auth-switch">
           {{ switchLead }}
           <router-link :to="switchPath">{{ switchLabel }}</router-link>
         </p>
       </header>
 
-      <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
+      <section v-if="success" class="auth-success" role="status">
+        <span class="auth-success__icon" aria-hidden="true">✓</span>
+        <div>
+          <strong>{{ success === "reset" ? "密码已重置" : "请查收邮件" }}</strong>
+          <p v-if="success === 'reset'">
+            新密码已经生效，所有旧登录会话和 API Key 已失效。请使用新密码重新登录，并为客户端创建新的 API Key。
+          </p>
+          <p v-else>
+            如果该邮箱已注册，我们已发送重置链接。请检查收件箱和垃圾邮件，链接 30
+            分钟内有效且只能使用一次。
+          </p>
+          <router-link class="auth-success__link" to="/relay/sign-in">
+            返回登录 →
+          </router-link>
+        </div>
+      </section>
 
-      <form class="auth-form" novalidate @submit.prevent="submit">
-        <label class="auth-field">
-          <span>邮箱</span>
-          <input
-            v-model="email"
-            type="email"
-            name="email"
-            autocomplete="email"
-            placeholder="name@example.com"
-            maxlength="120"
-            :disabled="submitting"
-          />
-        </label>
+      <template v-else>
+        <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
 
-        <label class="auth-field">
-          <span>密码</span>
-          <input
-            v-model="password"
-            type="password"
-            name="password"
-            :autocomplete="isSignUp ? 'new-password' : 'current-password'"
-            :placeholder="isSignUp ? '8-72 位字符' : '请输入密码'"
-            maxlength="72"
-            :disabled="submitting"
-          />
-        </label>
+        <div v-if="isReset && !resetToken" class="auth-error" role="alert">
+          重置链接不完整或已失效，请重新申请找回密码。
+          <router-link class="auth-inline-link" to="/relay/forgot-password">
+            发送新的重置邮件
+          </router-link>
+        </div>
 
-        <label v-if="isSignUp" class="auth-field">
-          <span>确认密码</span>
-          <input
-            v-model="confirmPassword"
-            type="password"
-            name="confirm-password"
-            autocomplete="new-password"
-            placeholder="再次输入密码"
-            maxlength="72"
-            :disabled="submitting"
-          />
-        </label>
+        <form v-else class="auth-form" novalidate @submit.prevent="submit">
+          <label v-if="!isReset" class="auth-field">
+            <span>邮箱</span>
+            <input
+              v-model="email"
+              type="email"
+              name="email"
+              autocomplete="email"
+              placeholder="name@example.com"
+              maxlength="120"
+              :disabled="submitting"
+            />
+          </label>
 
-        <button class="auth-submit" type="submit" :disabled="submitting">
-          <span v-if="submitting">{{ isSignUp ? "创建中…" : "登录中…" }}</span>
-          <span v-else>{{ isSignUp ? "创建账户" : "登录" }}</span>
-        </button>
-      </form>
+          <label v-if="!isForgot" class="auth-field">
+            <span>{{ isReset ? "新密码" : "密码" }}</span>
+            <span class="auth-field__control">
+              <input
+                v-model="password"
+                :type="showPassword ? 'text' : 'password'"
+                name="password"
+                :autocomplete="isSignUp || isReset ? 'new-password' : 'current-password'"
+                :placeholder="
+                  isSignUp || isReset ? '8-72 位字符' : '请输入密码'
+                "
+                maxlength="72"
+                :disabled="submitting"
+              />
+              <button
+                class="auth-eye"
+                type="button"
+                :aria-label="showPassword ? '隐藏密码' : '显示密码'"
+                @click="showPassword = !showPassword"
+              >
+                {{ showPassword ? "隐藏" : "显示" }}
+              </button>
+            </span>
+          </label>
+
+          <label v-if="isSignUp || isReset" class="auth-field">
+            <span>确认密码</span>
+            <input
+              v-model="confirmPassword"
+              :type="showPassword ? 'text' : 'password'"
+              name="confirm-password"
+              autocomplete="new-password"
+              :placeholder="isReset ? '再次输入新密码' : '再次输入密码'"
+              maxlength="72"
+              :disabled="submitting"
+            />
+          </label>
+
+          <p v-if="mode === 'signin'" class="auth-aside">
+            <router-link to="/relay/forgot-password">忘记密码？</router-link>
+          </p>
+
+          <button class="auth-submit" type="submit" :disabled="submitting">
+            {{ submitLabel }}
+          </button>
+        </form>
+      </template>
 
       <p class="auth-foot">
-        继续即表示你同意本站的服务条款与隐私政策。密码长度需为 8-72 位。
+        <template v-if="isReset">
+          重置链接 30 分钟内有效，只能使用一次。遇到问题请联系管理员重新发送。
+        </template>
+        <template v-else-if="isForgot">
+          出于安全考虑，我们不会提示该邮箱是否已注册。密码长度需为 8-72 位。
+        </template>
+        <template v-else>
+          继续即表示你同意本站的服务条款与隐私政策。密码长度需为 8-72 位。
+        </template>
       </p>
     </main>
   </div>
@@ -249,8 +408,15 @@ async function submit() {
   line-height: 1.25;
 }
 
-.auth-switch {
+.auth-lead {
   margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.auth-switch {
+  margin: 14px 0 0;
   font-size: 14px;
   color: var(--muted);
 }
@@ -278,6 +444,65 @@ async function submit() {
   word-break: break-word;
 }
 
+.auth-inline-link {
+  margin-left: 6px;
+  color: #c8362c;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-success {
+  display: flex;
+  gap: 14px;
+  margin-top: 26px;
+  padding: 18px 18px 18px 16px;
+  border: 1px solid #cdeadd;
+  border-radius: 14px;
+  background: #f3fbf7;
+  color: #145c40;
+}
+
+.auth-success__icon {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #1a7f5a;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.auth-success strong {
+  display: block;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.auth-success p {
+  margin: 6px 0 0;
+  color: #2f6b55;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.auth-success__link {
+  display: inline-block;
+  margin-top: 12px;
+  color: #1a7f5a;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-success__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .auth-form {
   margin-top: 24px;
   display: flex;
@@ -285,7 +510,7 @@ async function submit() {
   gap: 16px;
 }
 
-.auth-field span {
+.auth-field > span:first-child {
   display: block;
   margin-bottom: 8px;
   font-size: 14.5px;
@@ -319,6 +544,52 @@ async function submit() {
 .auth-field input:disabled {
   background: var(--soft);
   cursor: not-allowed;
+}
+
+.auth-field__control {
+  position: relative;
+  display: block;
+}
+
+.auth-field__control input {
+  padding-right: 64px;
+}
+
+.auth-eye {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  padding: 6px 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.auth-eye:hover {
+  color: var(--primary-dark);
+  background: var(--soft);
+}
+
+.auth-aside {
+  margin: -6px 0 0;
+  text-align: right;
+  font-size: 13px;
+}
+
+.auth-aside a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.auth-aside a:hover {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .auth-submit {

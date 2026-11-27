@@ -1,9 +1,10 @@
 <script setup>
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import dayjs from "dayjs";
 import { fetchCatalog, fetchOrder, payOrder } from "../api/shop";
 import { loadRelaySession } from "../api/relay";
 import { loadRecentOrders, rememberOrder, STATUS_TEXT } from "../utils/shopOrders";
+import { paymentLink, paymentNote, resolvePaymentQr } from "../utils/paymentQr";
 
 const orderNo = ref("");
 const lookupToken = ref("");
@@ -17,16 +18,45 @@ const recent = ref(loadRecentOrders());
 const selfPay = ref(true);
 const supportUrl = ref("");
 const supportLabel = ref("管理员");
+const payment = ref({});
+const method = ref("alipay");
+const lastRefreshed = ref("");
+const qr = ref({ image: "", link: "", generated: false });
+let qrRequest = 0;
+
+const methodLabel = computed(() => (method.value === "alipay" ? "支付宝" : "微信"));
+
+const configuredQr = computed(() => {
+  const key = method.value === "alipay" ? "alipayQr" : "wechatQr";
+  const value = payment.value ? payment.value[key] : "";
+  return typeof value === "string" ? value.trim() : "";
+});
+
+const methodLink = computed(() => paymentLink(payment.value, method.value));
+const paymentTip = computed(() => paymentNote(payment.value));
+
+watch(
+  [configuredQr, methodLink],
+  async ([image, link]) => {
+    const request = ++qrRequest;
+    const resolved = await resolvePaymentQr({ image, link });
+    if (request === qrRequest) qr.value = resolved;
+  },
+  { immediate: true }
+);
 
 onMounted(async () => {
   relayLoggedIn.value = Boolean(loadRelaySession()?.token);
   try {
     const catalog = await fetchCatalog();
     selfPay.value = catalog.allowSelfPay !== false;
-    const payment = catalog.payment || {};
-    supportUrl.value = typeof payment.contactUrl === "string" ? payment.contactUrl : "";
+    payment.value = catalog.payment || {};
+    supportUrl.value =
+      typeof payment.value.contactUrl === "string" ? payment.value.contactUrl : "";
     supportLabel.value =
-      typeof payment.contact === "string" && payment.contact ? payment.contact : "管理员";
+      typeof payment.value.contact === "string" && payment.value.contact
+        ? payment.value.contact
+        : "管理员";
   } catch {
     /* 目录加载失败时保持默认的本地确认流程 */
   }
@@ -43,6 +73,9 @@ async function search() {
   try {
     const found = await fetchOrder(key, { lookupToken: lookupToken.value.trim() });
     result.value = found;
+    if (found.paymentMethod === "alipay" || found.paymentMethod === "wechat") {
+      method.value = found.paymentMethod;
+    }
     rememberOrder({ ...found, lookupToken: lookupToken.value.trim() || found.lookupToken });
   } catch (e) {
     result.value = null;
@@ -50,6 +83,7 @@ async function search() {
   } finally {
     searched.value = true;
     loading.value = false;
+    lastRefreshed.value = dayjs().format("HH:mm:ss");
     recent.value = loadRecentOrders();
   }
 }
@@ -65,9 +99,14 @@ async function confirmPaid() {
   paying.value = true;
   error.value = "";
   try {
-    result.value = await payOrder(result.value.orderNo, result.value.paymentMethod || "", {
-      lookupToken: lookupToken.value.trim()
-    });
+    const paid = await payOrder(
+      result.value.orderNo,
+      method.value || result.value.paymentMethod || "",
+      { lookupToken: lookupToken.value.trim() }
+    );
+    result.value = paid;
+    rememberOrder(paid);
+    recent.value = loadRecentOrders();
   } catch (e) {
     error.value = e.message || "支付确认失败";
   } finally {
@@ -134,6 +173,7 @@ function formatCents(value) {
           {{ STATUS_TEXT[result.status] || result.status }}
         </span>
       </div>
+      <p v-if="lastRefreshed" class="shop-result__meta">最近刷新 {{ lastRefreshed }}</p>
       <dl class="shop-dl">
         <div>
           <dt>商品</dt>
@@ -167,6 +207,57 @@ function formatCents(value) {
           <dd>{{ result.note || "—" }}</dd>
         </div>
       </dl>
+      <div v-if="result.status === 'pending'" class="shop-paybox">
+        <div class="shop-paybox__head">
+          <strong>待付款</strong>
+          <span>应付 ¥{{ Number(result.total).toFixed(2) }}</span>
+        </div>
+        <div class="shop-pay__methods">
+          <button
+            class="shop-pay__method"
+            :class="{ 'shop-pay__method--active': method === 'alipay' }"
+            type="button"
+            @click="method = 'alipay'"
+          >
+            支付宝
+          </button>
+          <button
+            class="shop-pay__method"
+            :class="{ 'shop-pay__method--active': method === 'wechat' }"
+            type="button"
+            @click="method = 'wechat'"
+          >
+            微信支付
+          </button>
+        </div>
+        <div v-if="qr.image" class="shop-qr">
+          <img :src="qr.image" :alt="`${methodLabel}收款码`" />
+          <p v-if="qr.generated" class="shop-pay__note">使用{{ methodLabel }}扫码付款</p>
+        </div>
+        <div v-else class="shop-qr shop-qr--manual">
+          <span>当前为人工确认收款</span>
+          <a
+            v-if="supportUrl"
+            class="shop-pay__open"
+            :href="supportUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            联系{{ supportLabel }}获取收款方式 →
+          </a>
+          <span v-else>请联系管理员获取收款方式。</span>
+        </div>
+        <a
+          v-if="qr.link"
+          class="shop-pay__open"
+          :href="qr.link"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          在{{ methodLabel }}中打开付款 →
+        </a>
+        <p v-if="paymentTip" class="shop-hint">{{ paymentTip }}</p>
+      </div>
       <div style="margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px">
         <button
           class="shop-btn shop-btn--ghost"
@@ -209,8 +300,17 @@ function formatCents(value) {
         <li v-for="item in recent" :key="item.orderNo">
           <button class="shop-recent__btn" type="button" @click="pick(item)">
             <span class="shop-recent__no">{{ item.orderNo }}</span>
-            <span class="shop-recent__meta">
-              {{ item.productName }} · ¥{{ item.total }}
+            <span class="shop-recent__side">
+              <span class="shop-recent__meta">
+                {{ item.productName }} · ¥{{ item.total }}
+              </span>
+              <span
+                v-if="item.status"
+                class="shop-status"
+                :class="`shop-status--${item.status}`"
+              >
+                {{ STATUS_TEXT[item.status] || item.status }}
+              </span>
             </span>
           </button>
         </li>

@@ -1,5 +1,6 @@
 package com.blog.shop;
 
+import com.blog.mail.MailGateway;
 import com.blog.relay.RelayException;
 import com.blog.relay.RelayService;
 import com.blog.relay.RelayTopup;
@@ -11,6 +12,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -80,6 +82,7 @@ public class ShopService {
     private final RelayService relayService;
     private final Path catalogPath;
     private final Path ordersPath;
+    private final MailGateway mailGateway;
     private final Object orderLock = new Object();
 
     /**
@@ -95,10 +98,21 @@ public class ShopService {
             RelayService relayService,
             @Value("${blog.shop.catalog-path:${user.dir}/shop/catalog.json}") String catalogPath,
             @Value("${blog.shop.data-path:${user.dir}/data/shop-orders.json}") String dataPath) {
+        this(objectMapper, relayService, catalogPath, dataPath, null);
+    }
+
+    @Autowired
+    public ShopService(
+            ObjectMapper objectMapper,
+            RelayService relayService,
+            @Value("${blog.shop.catalog-path:${user.dir}/shop/catalog.json}") String catalogPath,
+            @Value("${blog.shop.data-path:${user.dir}/data/shop-orders.json}") String dataPath,
+            MailGateway mailGateway) {
         this.objectMapper = objectMapper;
         this.relayService = relayService;
         this.catalogPath = Paths.get(catalogPath).toAbsolutePath().normalize();
         this.ordersPath = Paths.get(dataPath).toAbsolutePath().normalize();
+        this.mailGateway = mailGateway;
     }
 
     /** Test hook for the production self-pay switch. */
@@ -171,9 +185,11 @@ public class ShopService {
      */
     public Map<String, Object> createOrderResponse(ShopCreateOrderRequest request) {
         CreatedOrder created = createOrderInternal(request);
+        boolean emailQueued = notifyOrderCreated(created);
         Map<String, Object> body = objectMapper.convertValue(
                 publicView(created.order()), new TypeReference<Map<String, Object>>() {});
         body.put("lookupToken", created.lookupToken());
+        body.put("emailQueued", emailQueued);
         return body;
     }
 
@@ -337,6 +353,7 @@ public class ShopService {
         if ("paid".equals(status) || "delivered".equals(status)) {
             if (ensureRelayCredit(order)) {
                 writeOrders(orders);
+                notifyOrderPaid(order);
             }
             return order;
         }
@@ -350,8 +367,11 @@ public class ShopService {
         if (VALID_PAYMENT_METHODS.contains(normalizedMethod)) {
             order.setPaymentMethod(normalizedMethod);
         }
-        ensureRelayCredit(order);
+        boolean credited = ensureRelayCredit(order);
         writeOrders(orders);
+        if (credited) {
+            notifyOrderPaid(order);
+        }
         return order;
     }
 
@@ -446,10 +466,14 @@ public class ShopService {
             } else {
                 order.setCancelledAt(null);
             }
+            boolean credited = false;
             if ("paid".equals(nextStatus) || "delivered".equals(nextStatus)) {
-                ensureRelayCredit(order);
+                credited = ensureRelayCredit(order);
             }
             writeOrders(orders);
+            if (credited) {
+                notifyOrderPaid(order);
+            }
             return publicView(order);
         }
     }
@@ -496,6 +520,10 @@ public class ShopService {
 
         order.setRelayCreditedAt(nowIso());
         order.setRelayTopupOrderNo(topup.getOrderNo());
+        // A catalog edit between checkout and payment must not make the stored
+        // snapshot (shown on the order page and in the email) disagree with the
+        // amount that was actually credited.
+        order.setRelayCreditCents(topup.getCreditCents());
         return true;
     }
 
@@ -581,6 +609,71 @@ public class ShopService {
             }
         }
         return false;
+    }
+
+    /** Queues the order/token email; failures never fail checkout. */
+    private boolean notifyOrderCreated(CreatedOrder created) {
+        if (created == null || created.order() == null) {
+            return false;
+        }
+        ShopOrder order = created.order();
+        if (mailGateway == null || !mailGateway.enabled() || !isEmail(order.getContact())) {
+            return false;
+        }
+        String total = order.getTotal() == null ? "" : order.getTotal().toPlainString();
+        String text = """
+                你好，
+
+                你的订单已创建。
+
+                订单号：%s
+                商品：%s × %d
+                金额：¥%s
+                查询凭证：%s
+
+                请妥善保存查询凭证。也可以登录下单邮箱对应的中转站账号，在 %s/shop/orders 查询订单。
+                """.formatted(
+                order.getOrderNo(),
+                order.getProductName() == null ? "" : order.getProductName(),
+                order.getQuantity(),
+                total,
+                created.lookupToken(),
+                mailGateway.siteBaseUrl());
+        return notifySafely(order.getContact(),
+                "订单已创建 · " + order.getOrderNo(), text);
+    }
+
+    /** Queues the "credit arrived" email exactly when a credit is applied. */
+    private void notifyOrderPaid(ShopOrder order) {
+        if (order == null || mailGateway == null || !mailGateway.enabled()
+                || !isEmail(order.getContact()) || order.getRelayCreditCents() == null) {
+            return;
+        }
+        String credit = java.math.BigDecimal.valueOf(order.getRelayCreditCents())
+                .movePointLeft(2)
+                .toPlainString();
+        String text = """
+                你好，
+
+                订单 %s 已确认收款，¥%s 额度已充入 %s 的中转站账户。
+
+                可登录 %s/relay/console 查看余额和充值记录。
+                """.formatted(
+                order.getOrderNo(),
+                credit,
+                order.getContact(),
+                mailGateway.siteBaseUrl());
+        notifySafely(order.getContact(), "额度已到账 · " + order.getOrderNo(), text);
+    }
+
+    /** A mail failure must never turn a persisted order into an HTTP error. */
+    private boolean notifySafely(String to, String subject, String text) {
+        try {
+            return mailGateway.send(to, subject, text);
+        } catch (RuntimeException e) {
+            log.warn("Mail notification '{}' failed: {}", subject, e.getMessage());
+            return false;
+        }
     }
 
     /** Strips internal fields by building an allowlist view, not a blacklist. */

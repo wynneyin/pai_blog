@@ -74,12 +74,32 @@ fi
 # .env 含后台令牌，确保仅所有者可读。
 chmod 600 "$ENV_FILE" 2>/dev/null || true
 
+# Compose 部署用的 .env.prod 也可以复用（邮件等可选配置）；
+# 后加载，因此同名变量以 .env.prod 为准。
+if [ -f "$BLOG_DIR/.env.prod" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$BLOG_DIR/.env.prod"
+  set +a
+  chmod 600 "$BLOG_DIR/.env.prod" 2>/dev/null || true
+fi
+
 # 7. 启动/重启后端
 log "启动后端..."
 pm2 delete blog-backend 2>/dev/null || true
 ARTICLES_PATH="$ARTICLES_DIR" \
 BLOG_CORS_ALLOWED_ORIGINS="$BLOG_CORS_ALLOWED_ORIGINS" \
 BLOG_ADMIN_TOKEN="$BLOG_ADMIN_TOKEN" \
+MAIL_ENABLED="${MAIL_ENABLED:-false}" \
+MAIL_HOST="${MAIL_HOST:-}" \
+MAIL_PORT="${MAIL_PORT:-587}" \
+MAIL_USERNAME="${MAIL_USERNAME:-}" \
+MAIL_PASSWORD="${MAIL_PASSWORD:-}" \
+MAIL_FROM="${MAIL_FROM:-}" \
+MAIL_SMTP_AUTH="${MAIL_SMTP_AUTH:-true}" \
+MAIL_STARTTLS="${MAIL_STARTTLS:-true}" \
+MAIL_SSL="${MAIL_SSL:-false}" \
+SITE_BASE_URL="${SITE_BASE_URL:-https://wynneyin.site}" \
 pm2 start "$BACKEND_DIR/src/index.js" --name blog-backend
 
 pm2 save

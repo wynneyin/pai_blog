@@ -77,6 +77,12 @@ public class RelayService {
     private static final String SESSION_TOKEN_PREFIX = "rs_";
     private static final String API_KEY_PREFIX = "sk-relay-";
 
+    private static final String RESET_TOKEN_PREFIX = "pr_";
+    private static final int RESET_TOKEN_BYTES = 32;       // 64 lowercase hex chars
+    private static final long RESET_TTL_MINUTES = 30L;
+    private static final long RESET_RESEND_COOLDOWN_SECONDS = 60L;
+    private static final int RESET_MAX_PER_HOUR = 5;
+
     private static final int MAX_ACTIVE_KEYS = 10;
     private static final int MAX_KEY_NAME_LENGTH = 40;
     private static final String DEFAULT_KEY_NAME = "默认令牌";
@@ -315,6 +321,117 @@ public class RelayService {
         }
     }
 
+    /** Plaintext reset token handed to the controller for the outbound email. */
+    public record PasswordResetTicket(String email, String token) {
+    }
+
+    /**
+     * Creates a single-use password reset token. Returns null when the email is
+     * unknown, the account is disabled, or a reset was requested moments ago;
+     * callers must always answer with the same generic success message so the
+     * endpoint cannot be used to discover registered addresses.
+     */
+    public PasswordResetTicket createPasswordReset(String email, String clientIp) {
+        checkRateLimit(clientIp);
+        String normalizedEmail = normalizeEmail(email);
+        if (!isValidEmail(normalizedEmail)) {
+            throw RelayException.badRequest("邮箱格式不正确");
+        }
+
+        synchronized (storeLock) {
+            RelayStore store = readStore();
+            RelayUser user = findUserByEmail(store, normalizedEmail);
+            if (user == null || user.isDisabled()) {
+                return null;
+            }
+
+            for (RelayPasswordReset existing : store.getPasswordResets()) {
+                if (existing != null && user.getId().equals(existing.getUserId())
+                        && isWithinCooldown(existing.getCreatedAt(), RESET_RESEND_COOLDOWN_SECONDS)) {
+                    // Throttle email bombing without telling the caller why.
+                    return null;
+                }
+            }
+
+            // Cap how many messages one address can receive from any number of
+            // source IPs. Older links stay valid until they expire, so a third
+            // party cannot invalidate the link the owner is about to open.
+            long recent = store.getPasswordResets().stream()
+                    .filter(reset -> reset != null && user.getId().equals(reset.getUserId()))
+                    .filter(reset -> isWithinCooldown(reset.getCreatedAt(), 3_600L))
+                    .count();
+            if (recent >= RESET_MAX_PER_HOUR) {
+                return null;
+            }
+            store.getPasswordResets().removeIf(reset -> reset == null
+                    || isExpired(reset.getExpiresAt()));
+
+            Instant now = Instant.now();
+            String token = RESET_TOKEN_PREFIX + randomHex(RESET_TOKEN_BYTES);
+            store.getPasswordResets().add(RelayPasswordReset.builder()
+                    .tokenHash(sha256Hex(token))
+                    .userId(user.getId())
+                    .createdAt(nowIso())
+                    .expiresAt(ISO_UTC_MILLIS.format(now.plus(RESET_TTL_MINUTES, ChronoUnit.MINUTES)))
+                    .build());
+            writeStore(store);
+            return new PasswordResetTicket(normalizedEmail, token);
+        }
+    }
+
+    /**
+     * Consumes a reset token, changes the password and revokes every existing
+     * session and API key for that account. Tokens are single-use and expire
+     * after 30 minutes.
+     */
+    public Map<String, Object> resetPassword(String token, String password, String clientIp) {
+        checkRateLimit(clientIp);
+        if (token == null || token.isBlank()) {
+            throw RelayException.badRequest("重置链接无效或已过期");
+        }
+        if (password == null || password.length() < 8 || password.length() > 72) {
+            throw RelayException.badRequest("密码长度需为 8-72 位");
+        }
+
+        synchronized (storeLock) {
+            RelayStore store = readStore();
+            String tokenHash = sha256Hex(token.trim());
+            RelayPasswordReset match = null;
+            for (RelayPasswordReset reset : store.getPasswordResets()) {
+                if (reset != null && tokenHash.equals(reset.getTokenHash())) {
+                    match = reset;
+                    break;
+                }
+            }
+            RelayUser user = match == null ? null : findUserById(store, match.getUserId());
+            if (match == null || user == null || user.isDisabled() || isExpired(match.getExpiresAt())) {
+                throw RelayException.badRequest("重置链接无效或已过期");
+            }
+
+            String salt = randomHex(PASSWORD_SALT_BYTES);
+            user.setPasswordSalt(salt);
+            user.setPasswordHash(hashPasswordHex(password, salt));
+            store.getPasswordResets().removeIf(reset -> reset == null
+                    || user.getId().equals(reset.getUserId()));
+            store.getSessions().removeIf(session -> session == null
+                    || user.getId().equals(session.getUserId()));
+            // Keys minted before the reset could belong to whoever the reset is
+            // meant to evict, so revoke them too (history is kept for the UI).
+            String revokedAt = nowIso();
+            for (RelayKey key : store.getKeys()) {
+                if (key != null && user.getId().equals(key.getUserId())
+                        && key.getRevokedAt() == null) {
+                    key.setRevokedAt(revokedAt);
+                }
+            }
+            writeStore(store);
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("reset", true);
+            return result;
+        }
+    }
+
     /**
      * Removes the current session when it exists. A missing or unknown token
      * still reports success so clients can always clear local state.
@@ -414,6 +531,17 @@ public class RelayService {
             return !Instant.parse(expiresAt).isAfter(Instant.now());
         } catch (DateTimeParseException e) {
             return true;
+        }
+    }
+
+    private static boolean isWithinCooldown(String createdAt, long seconds) {
+        if (createdAt == null) {
+            return false;
+        }
+        try {
+            return Instant.parse(createdAt).plusSeconds(seconds).isAfter(Instant.now());
+        } catch (DateTimeParseException e) {
+            return false;
         }
     }
 
@@ -1296,6 +1424,9 @@ public class RelayService {
         if (store.getUsage() == null) {
             store.setUsage(new ArrayList<>());
         }
+        if (store.getPasswordResets() == null) {
+            store.setPasswordResets(new ArrayList<>());
+        }
 
         for (RelayUser user : store.getUsers()) {
             if (user == null || isBlank(user.getId())) {
@@ -1321,6 +1452,11 @@ public class RelayService {
         for (RelayUsage usage : store.getUsage()) {
             if (usage == null || isBlank(usage.getId()) || isBlank(usage.getUserId())) {
                 throw new IOException("用量记录不完整");
+            }
+        }
+        for (RelayPasswordReset reset : store.getPasswordResets()) {
+            if (reset == null || isBlank(reset.getTokenHash()) || isBlank(reset.getUserId())) {
+                throw new IOException("密码重置记录不完整");
             }
         }
     }

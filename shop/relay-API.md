@@ -107,6 +107,21 @@ Body `{email, password}`。
 Body `{email, password}`。邮箱不存在或密码错误统一 401 `邮箱或密码错误`。
 成功：200 `{token, user}`。
 
+### POST /api/relay/auth/forgot-password
+Body `{email}`。需要邮件服务已配置，否则 503 `邮件服务未配置，请联系管理员`。
+- 成功始终返回 200 `{sent:true}`，无论邮箱是否存在、账户是否禁用。
+- 未知邮箱不生成令牌也不发信；同一账户 60 秒内只生成一封，每小时最多 5 封。
+- 已发出的旧链接在过期前保持有效，不会被新申请顶掉。
+- 令牌 `pr_` + 64 位十六进制，库中只存 SHA-256，30 分钟有效。
+- 邮件正文里的链接为 `${SITE_BASE_URL}/relay/reset-password#token=<token>`。
+
+### POST /api/relay/auth/reset-password
+Body `{token, password}`。
+- token 为空、格式不符、已使用或已过期 → 400 `重置链接无效或已过期`。
+- password 长度非 8-72 → 400 `密码长度需为 8-72 位`。
+- 成功 200 `{reset:true}`；更新盐与哈希，删除该用户全部会话和重置令牌，
+  并吊销其全部未吊销 API Key（记录保留，`revokedAt` 有值）。
+
 ### POST /api/relay/auth/logout
 需要 Bearer。删除当前会话（找不到也返回成功）。200 `{ok:true}`。
 

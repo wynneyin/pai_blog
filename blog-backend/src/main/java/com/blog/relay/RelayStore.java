@@ -21,6 +21,7 @@ public class RelayStore {
     private List<RelayKey> keys = new ArrayList<>();
     private List<RelayTopup> topups = new ArrayList<>();
     private List<RelayUsage> usage = new ArrayList<>();
+    private List<RelayPasswordReset> passwordResets = new ArrayList<>();
 
     public RelayStore(List<RelayUser> users, List<RelaySession> sessions, List<RelayKey> keys,
                       List<RelayTopup> topups, List<RelayUsage> usage) {

@@ -9,6 +9,7 @@ const {
   creditShopOrder
 } = require('./relay');
 const { clientIp } = require('./client-ip');
+const mail = require('./mail');
 
 const ORDER_STATUSES = ['pending', 'paid', 'delivered', 'cancelled'];
 // Every order except a cancelled one consumes stock: pending/paid reserve it,
@@ -277,6 +278,10 @@ function ensureRelayCredit(order) {
   );
   order.relayCreditedAt = new Date().toISOString();
   order.relayTopupOrderNo = topup.orderNo;
+  // A catalog edit between checkout and payment must not make the stored
+  // snapshot (shown on the order page and in the email) disagree with the
+  // amount that was actually credited.
+  order.relayCreditCents = topup.creditCents;
   return true;
 }
 
@@ -451,7 +456,8 @@ shopRouter.post(
 
     orders.push(order);
     writeOrders(orders);
-    res.json(ok({ ...publicOrder(order), lookupToken }));
+    const emailQueued = mail.sendOrderCreated(order, lookupToken);
+    res.json(ok({ ...publicOrder(order), lookupToken, emailQueued }));
   })
 );
 
@@ -487,7 +493,10 @@ shopRouter.post(
     const order = orders[index];
     if (order.status === 'paid' || order.status === 'delivered') {
       // Paying twice is a no-op and must not rewrite paidAt/paymentMethod.
-      if (ensureRelayCredit(order)) writeOrders(orders);
+      if (ensureRelayCredit(order)) {
+        writeOrders(orders);
+        mail.sendOrderPaid(order);
+      }
       return res.json(ok(publicOrder(order)));
     }
     if (order.status === 'cancelled') {
@@ -497,9 +506,10 @@ shopRouter.post(
     order.status = 'paid';
     order.paidAt = new Date().toISOString();
     if (PAYMENT_METHODS.has(method)) order.paymentMethod = method;
-    ensureRelayCredit(order);
+    const credited = ensureRelayCredit(order);
 
     writeOrders(orders);
+    if (credited) mail.sendOrderPaid(order);
     res.json(ok(publicOrder(order)));
   })
 );
@@ -568,10 +578,12 @@ adminRouter.post(
       delete order.cancelledAt;
     }
     if (status === 'paid' || status === 'delivered') {
-      ensureRelayCredit(order);
+      const credited = ensureRelayCredit(order);
+      writeOrders(orders);
+      if (credited) mail.sendOrderPaid(order);
+    } else {
+      writeOrders(orders);
     }
-
-    writeOrders(orders);
     res.json(ok(publicOrder(order)));
   })
 );

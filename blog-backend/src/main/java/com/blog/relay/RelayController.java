@@ -1,6 +1,7 @@
 package com.blog.relay;
 
 import com.blog.dto.ApiResponse;
+import com.blog.mail.MailGateway;
 import com.blog.web.ClientIp;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,6 +17,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * Public relay account endpoints under /api/relay, using the standard Java
  * {code,message,data} envelope. The OpenAI compatible proxy lives in
@@ -27,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class RelayController {
 
     private final RelayService relayService;
+    private final MailGateway mailGateway;
 
     @GetMapping("/catalog")
     public ResponseEntity<ApiResponse<?>> getCatalog() {
@@ -49,6 +54,46 @@ public class RelayController {
             HttpServletRequest request) {
         return ResponseEntity.ok(ApiResponse.success(relayService.login(
                 textField(body, "email"),
+                textField(body, "password"),
+                ClientIp.resolve(request))));
+    }
+
+    @PostMapping("/auth/forgot-password")
+    public ResponseEntity<ApiResponse<?>> forgotPassword(
+            @RequestBody(required = false) JsonNode body,
+            HttpServletRequest request) {
+        if (!mailGateway.enabled()) {
+            return ResponseEntity.status(503)
+                    .body(ApiResponse.error(503, "邮件服务未配置，请联系管理员"));
+        }
+        RelayService.PasswordResetTicket ticket = relayService.createPasswordReset(
+                textField(body, "email"), ClientIp.resolve(request));
+        if (ticket != null) {
+            String link = mailGateway.siteBaseUrl()
+                    + "/relay/reset-password#token=" + ticket.token();
+            String text = """
+                    你好，
+
+                    我们收到了重置 Wynne Relay 登录密码的请求。请打开下面的链接设置新密码：
+
+                    %s
+
+                    链接 30 分钟内有效，只能使用一次。如果这不是你发起的，可以忽略这封邮件，原密码不会被修改。
+                    """.formatted(link);
+            mailGateway.send(ticket.email(), "重置 Wynne Relay 登录密码", text);
+        }
+        // Always the same answer: unknown and known addresses are indistinguishable.
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sent", true);
+        return ResponseEntity.ok(ApiResponse.success(result));
+    }
+
+    @PostMapping("/auth/reset-password")
+    public ResponseEntity<ApiResponse<?>> resetPassword(
+            @RequestBody(required = false) JsonNode body,
+            HttpServletRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(relayService.resetPassword(
+                textField(body, "token"),
                 textField(body, "password"),
                 ClientIp.resolve(request))));
     }

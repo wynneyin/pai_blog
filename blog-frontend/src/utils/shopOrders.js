@@ -27,6 +27,7 @@ export function rememberOrder(order) {
     orderNo: order.orderNo,
     productName: order.productName || "",
     total: order.total,
+    status: order.status || existing?.status || "",
     createdAt: order.createdAt,
     // 查询凭证只在本机保存，用于再次打开订单查询页时免登录查看。
     // 用中转站登录查询时响应里没有凭证，此时保留本机已有的那份。

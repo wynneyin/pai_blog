@@ -6,6 +6,7 @@ const http = require('http');
 const https = require('https');
 const { StringDecoder } = require('string_decoder');
 const { clientIp } = require('./client-ip');
+const mail = require('./mail');
 
 // Relay store layout and business rules follow shop/relay-API.md. Every value
 // that leaves this module goes through one of the public mappers below so
@@ -35,8 +36,14 @@ const ORDER_NO_MAX_ATTEMPTS = 50;
 // Uppercase alphanumerics only, whatever the configured alphabet looked like.
 const ORDER_NO_ALPHABET =
   'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'.replace(/[^A-Z0-9]/g, '') || 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-const STORE_COLLECTIONS = ['users', 'sessions', 'keys', 'topups', 'usage'];
+const STORE_COLLECTIONS = ['users', 'sessions', 'keys', 'topups', 'usage', 'passwordResets'];
 const PAYMENT_METHODS = new Set(['alipay', 'wechat']);
+const RESET_TOKEN_PREFIX = 'pr_';
+const RESET_TOKEN_BYTES = 32;
+const RESET_TTL_MS = 30 * 60 * 1000;
+const RESET_RESEND_COOLDOWN_MS = 60 * 1000;
+const RESET_MAX_PER_HOUR = 5;
+const RESET_HOUR_MS = 60 * 60 * 1000;
 const AUTH_RATE_WINDOW_MS = 60 * 1000;
 const AUTH_RATE_MAX = 30;
 const CREATE_RATE_WINDOW_MS = 60 * 1000;
@@ -151,7 +158,7 @@ function bearerToken(reqOrHeader) {
 // ---------------------------------------------------------------------------
 
 function emptyStore() {
-  return { users: [], sessions: [], keys: [], topups: [], usage: [] };
+  return { users: [], sessions: [], keys: [], topups: [], usage: [], passwordResets: [] };
 }
 
 // A missing file means "no accounts yet". Anything unreadable or structurally
@@ -180,6 +187,19 @@ function readStore() {
         if (!record || typeof record !== 'object' || Array.isArray(record)) {
           throw new Error('invalid record');
         }
+      }
+    }
+    for (const reset of parsed.passwordResets) {
+      if (
+        !reset ||
+        typeof reset !== 'object' ||
+        Array.isArray(reset) ||
+        typeof reset.tokenHash !== 'string' ||
+        !reset.tokenHash ||
+        typeof reset.userId !== 'string' ||
+        !reset.userId
+      ) {
+        throw new Error('invalid password reset');
       }
     }
     return parsed;
@@ -426,6 +446,110 @@ function activeSessionUser(store, token) {
   const user = findUser(store, session.userId);
   if (!user) return null;
   return { session, user };
+}
+
+// ---------------------------------------------------------------------------
+// Password reset
+// ---------------------------------------------------------------------------
+
+// Creates a single-use reset token. Resolves to null for unknown or disabled
+// accounts, and while a reset created less than 60 seconds ago is still fresh;
+// the caller always answers with the same generic success so the endpoint
+// cannot be used to discover registered addresses.
+function createPasswordReset(email) {
+  const normalizedEmail = normalizeEmail(email);
+  if (
+    !normalizedEmail ||
+    normalizedEmail.length > EMAIL_MAX_LENGTH ||
+    !EMAIL_PATTERN.test(normalizedEmail)
+  ) {
+    throw httpError(400, '邮箱格式不正确');
+  }
+
+  return withStoreLock(() => {
+    const store = readStore();
+    const user = store.users.find(
+      (item) => item && normalizeEmail(item.email) === normalizedEmail
+    );
+    if (!user || user.disabled) return null;
+
+    const now = Date.now();
+    const inCooldown = store.passwordResets.some(
+      (reset) =>
+        reset &&
+        reset.userId === user.id &&
+        Date.parse(reset.createdAt) + RESET_RESEND_COOLDOWN_MS > now
+    );
+    // Throttle email bombing without telling the caller why.
+    if (inCooldown) return null;
+
+    // Cap how many messages one address can receive from any number of source
+    // IPs. Older links stay valid until they expire, so a third party cannot
+    // invalidate the link the owner is about to open.
+    const recent = store.passwordResets.filter(
+      (reset) =>
+        reset &&
+        reset.userId === user.id &&
+        Date.parse(reset.createdAt) + RESET_HOUR_MS > now
+    ).length;
+    if (recent >= RESET_MAX_PER_HOUR) return null;
+
+    store.passwordResets = store.passwordResets.filter(
+      (reset) => reset && Date.parse(reset.expiresAt) > now
+    );
+    const token = RESET_TOKEN_PREFIX + randomHex(RESET_TOKEN_BYTES);
+    store.passwordResets.push({
+      tokenHash: sha256Hex(token),
+      userId: user.id,
+      createdAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + RESET_TTL_MS).toISOString()
+    });
+    writeStore(store);
+    return { email: normalizedEmail, token };
+  });
+}
+
+// Consumes a reset token, changes the password and revokes every existing
+// session and API key for the account. Single use, 30 minute lifetime.
+function resetPassword(token, password) {
+  if (typeof token !== 'string' || !token.trim()) {
+    throw httpError(400, '重置链接无效或已过期');
+  }
+  if (typeof password !== 'string' || password.length < 8 || password.length > 72) {
+    throw httpError(400, '密码长度需为 8-72 位');
+  }
+  const tokenHash = sha256Hex(token.trim());
+
+  return withStoreLock(() => {
+    const store = readStore();
+    const reset = store.passwordResets.find(
+      (item) => item && item.tokenHash === tokenHash
+    );
+    const user = reset ? findUser(store, reset.userId) : null;
+    if (!reset || !user || user.disabled || !(Date.parse(reset.expiresAt) > Date.now())) {
+      throw httpError(400, '重置链接无效或已过期');
+    }
+
+    const salt = randomHex(PBKDF2_SALT_BYTES);
+    user.passwordSalt = salt;
+    user.passwordHash = hashPassword(password, salt);
+    store.passwordResets = store.passwordResets.filter(
+      (item) => item && item.userId !== user.id
+    );
+    store.sessions = store.sessions.filter(
+      (session) => session && session.userId !== user.id
+    );
+    // Keys minted before the reset could belong to whoever the reset is meant
+    // to evict, so revoke them too (history is kept for the UI).
+    const revokedAt = new Date().toISOString();
+    for (const key of store.keys) {
+      if (key && key.userId === user.id && !key.revokedAt) {
+        key.revokedAt = revokedAt;
+      }
+    }
+    writeStore(store);
+    return { reset: true };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -942,6 +1066,31 @@ relayRouter.post(
     });
 
     res.json(ok({ token: result.token, user: publicUser(result.user) }));
+  })
+);
+
+relayRouter.post(
+  '/auth/forgot-password',
+  authRateLimit,
+  handle(async (req, res) => {
+    if (!mail.enabled()) {
+      throw httpError(503, '邮件服务未配置，请联系管理员');
+    }
+    const ticket = await createPasswordReset(bodyOf(req).email);
+    if (ticket) {
+      mail.sendPasswordReset(ticket.email, ticket.token);
+    }
+    // Always the same answer: unknown and known addresses are indistinguishable.
+    res.json(ok({ sent: true }));
+  })
+);
+
+relayRouter.post(
+  '/auth/reset-password',
+  authRateLimit,
+  handle(async (req, res) => {
+    const body = bodyOf(req);
+    res.json(ok(await resetPassword(body.token, body.password)));
   })
 );
 
@@ -1463,5 +1612,7 @@ module.exports = {
   relayUserId,
   relayUserIdForAuthorization,
   shopCreditCents,
-  creditShopOrder
+  creditShopOrder,
+  createPasswordReset,
+  resetPassword
 };

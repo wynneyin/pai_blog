@@ -33,6 +33,7 @@ class RelayServiceTest {
 
     private static final String EMAIL = "user@example.com";
     private static final String PASSWORD = "unit-test-password";
+    private static final String NEW_PASSWORD = PASSWORD + "-v2";
     private static final String IP = "203.0.113.9";
 
     @TempDir
@@ -260,6 +261,55 @@ class RelayServiceTest {
         assertEquals(Boolean.TRUE, service.logout("Bearer " + token).get("ok"));
         assertEquals(Boolean.TRUE, service.logout(null).get("ok"));
         assertEquals(0, objectMapper.readTree(storePath.toFile()).path("sessions").size());
+    }
+
+    // ------------------------------------------------------------------
+    // Password reset
+    // ------------------------------------------------------------------
+
+    @Test
+    void passwordResetIsSingleUseAndRevokesSessions() throws IOException {
+        String token = register(EMAIL);
+        String rawKey = (String) service.createKey("Bearer " + token, "client", false).get("key");
+        assertNotNull(service.findActiveApiKey("Bearer " + rawKey));
+        RelayService.PasswordResetTicket ticket = service.createPasswordReset(EMAIL, IP);
+
+        assertNotNull(ticket);
+        assertEquals(EMAIL, ticket.email());
+        assertTrue(ticket.token().matches("pr_[0-9a-f]{64}"), ticket.token());
+        String persisted = Files.readString(storePath, StandardCharsets.UTF_8);
+        assertFalse(persisted.contains(ticket.token()));
+        assertTrue(persisted.contains(sha256(ticket.token())));
+
+        assertEquals(Boolean.TRUE, service.resetPassword(ticket.token(), NEW_PASSWORD, IP).get("reset"));
+        assertRelayError(401, "登录已失效，请重新登录", () -> service.me("Bearer " + token));
+        assertNull(service.findActiveApiKey("Bearer " + rawKey));
+        assertRelayError(401, "邮箱或密码错误", () -> service.login(EMAIL, PASSWORD, IP));
+        assertNotNull(service.login(EMAIL, NEW_PASSWORD, IP).get("token"));
+
+        assertRelayError(400, "重置链接无效或已过期",
+                () -> service.resetPassword(ticket.token(), NEW_PASSWORD, IP));
+    }
+
+    @Test
+    void passwordResetHidesUnknownAccountsAndThrottlesRepeats() throws IOException {
+        assertNull(service.createPasswordReset("nobody@example.com", IP));
+        assertRelayError(400, "邮箱格式不正确",
+                () -> service.createPasswordReset("not-an-email", IP));
+
+        register(EMAIL);
+        RelayService.PasswordResetTicket ticket = service.createPasswordReset(EMAIL, IP);
+        assertNotNull(ticket);
+        // A second request inside the cooldown stays silent instead of email bombing.
+        assertNull(service.createPasswordReset(EMAIL, "203.0.113.10"));
+        expireResetTokens();
+
+        assertRelayError(400, "重置链接无效或已过期",
+                () -> service.resetPassword(ticket.token(), NEW_PASSWORD, IP));
+        assertRelayError(400, "重置链接无效或已过期",
+                () -> service.resetPassword(null, NEW_PASSWORD, IP));
+        assertRelayError(400, "密码长度需为 8-72 位",
+                () -> service.resetPassword(ticket.token(), "short", IP));
     }
 
     // ------------------------------------------------------------------
@@ -763,6 +813,14 @@ class RelayServiceTest {
         JsonNode root = objectMapper.readTree(storePath.toFile());
         for (JsonNode session : root.path("sessions")) {
             ((ObjectNode) session).put("expiresAt", "2000-01-01T00:00:00.000Z");
+        }
+        objectMapper.writerWithDefaultPrettyPrinter().writeValue(storePath.toFile(), root);
+    }
+
+    private void expireResetTokens() throws IOException {
+        JsonNode root = objectMapper.readTree(storePath.toFile());
+        for (JsonNode reset : root.path("passwordResets")) {
+            ((ObjectNode) reset).put("expiresAt", "2000-01-01T00:00:00.000Z");
         }
         objectMapper.writerWithDefaultPrettyPrinter().writeValue(storePath.toFile(), root);
     }

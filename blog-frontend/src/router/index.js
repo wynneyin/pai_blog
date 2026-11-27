@@ -49,6 +49,18 @@ const router = createRouter({
       meta: { title: "注册", hideHeader: true, hideFooter: true }
     },
     {
+      path: "/relay/forgot-password",
+      name: "relay-forgot-password",
+      component: () => import("../views/RelayAuthView.vue"),
+      meta: { title: "找回密码", hideHeader: true, hideFooter: true }
+    },
+    {
+      path: "/relay/reset-password",
+      name: "relay-reset-password",
+      component: () => import("../views/RelayAuthView.vue"),
+      meta: { title: "重置密码", hideHeader: true, hideFooter: true }
+    },
+    {
       path: "/relay/console",
       component: () => import("../views/relay/RelayConsoleLayout.vue"),
       meta: { title: "控制台", hideFooter: true },

@@ -3,6 +3,8 @@ package com.blog.shop;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.IntNode;
+import com.blog.mail.MailGateway;
+import com.blog.relay.RelayService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
@@ -14,8 +16,10 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -442,6 +446,115 @@ class ShopServiceTest {
                 .contact(contact)
                 .note(note)
                 .build();
+    }
+
+    @Test
+    void relayOrderSendsCreatedAndCreditedEmails() throws IOException {
+        Path relayCatalogPath = tempDir.resolve("shop").resolve("relay.json");
+        Path relayStorePath = tempDir.resolve("data").resolve("relay-store.json");
+        Files.writeString(relayCatalogPath, relayCatalogJson(), StandardCharsets.UTF_8);
+        RelayService relay = new RelayService(objectMapper, relayCatalogPath.toString(),
+                relayStorePath.toString());
+        relay.register("buyer@example.com", "Relay-Test-Pass-1", "203.0.113.7");
+
+        Path shopCatalogPath = tempDir.resolve("shop").resolve("shop-catalog.json");
+        Files.writeString(shopCatalogPath, relayProductCatalogJson(), StandardCharsets.UTF_8);
+        CapturingMailGateway mail = new CapturingMailGateway();
+        ShopService shop = new ShopService(objectMapper, relay, shopCatalogPath.toString(),
+                ordersPath.toString(), mail);
+
+        Map<String, Object> created = shop.createOrderResponse(
+                request("relay-50", 1, "buyer@example.com", ""));
+        assertEquals(Boolean.TRUE, created.get("emailQueued"));
+        assertEquals(1, mail.sent.size());
+        assertEquals("buyer@example.com", mail.sent.get(0)[0]);
+        assertTrue(mail.sent.get(0)[1].startsWith("订单已创建 · "), mail.sent.get(0)[1]);
+        assertTrue(mail.sent.get(0)[2].contains((String) created.get("lookupToken")));
+
+        shop.updateOrderStatus((String) created.get("orderNo"), "paid");
+        assertEquals(2, mail.sent.size());
+        assertTrue(mail.sent.get(1)[1].startsWith("额度已到账 · "), mail.sent.get(1)[1]);
+        assertTrue(mail.sent.get(1)[2].contains("¥55.00"), mail.sent.get(1)[2]);
+    }
+
+    @Test
+    void paidEmailReportsTheActuallyCreditedAmount() throws IOException {
+        Path relayCatalogPath = tempDir.resolve("shop").resolve("relay.json");
+        Path relayStorePath = tempDir.resolve("data").resolve("relay-store.json");
+        Files.writeString(relayCatalogPath, relayCatalogJson(), StandardCharsets.UTF_8);
+        RelayService relay = new RelayService(objectMapper, relayCatalogPath.toString(),
+                relayStorePath.toString());
+        relay.register("buyer@example.com", "Relay-Test-Pass-1", "203.0.113.7");
+
+        Path shopCatalogPath = tempDir.resolve("shop").resolve("shop-catalog.json");
+        Files.writeString(shopCatalogPath, relayProductCatalogJson(), StandardCharsets.UTF_8);
+        CapturingMailGateway mail = new CapturingMailGateway();
+        ShopService shop = new ShopService(objectMapper, relay, shopCatalogPath.toString(),
+                ordersPath.toString(), mail);
+
+        Map<String, Object> created = shop.createOrderResponse(
+                request("relay-50", 1, "buyer@example.com", ""));
+
+        // The operator raises the bonus while the order is still pending.
+        Files.writeString(relayCatalogPath, relayCatalogJson(60), StandardCharsets.UTF_8);
+        ShopOrder paid = shop.updateOrderStatus((String) created.get("orderNo"), "paid");
+
+        assertEquals(Integer.valueOf(6000), paid.getRelayCreditCents());
+        assertEquals(2, mail.sent.size());
+        assertTrue(mail.sent.get(1)[2].contains("¥60.00"), mail.sent.get(1)[2]);
+    }
+
+    private static String relayCatalogJson() {
+        return relayCatalogJson(55);
+    }
+
+    private static String relayCatalogJson(int credit) {
+        return """
+                {
+                  "models": [{"name": "gpt-4o-mini", "input": 1.08, "output": 4.32}],
+                  "plans": [{"id": "p50", "name": "标准充值", "price": 50, "credit": %d}]
+                }
+                """.formatted(credit);
+    }
+
+    private static String relayProductCatalogJson() {
+        return """
+                {
+                  "categories": [],
+                  "products": [
+                    {
+                      "id": "relay-50",
+                      "categoryId": "relay",
+                      "name": "中转额度 50",
+                      "price": 50,
+                      "stock": 5,
+                      "relayPlanId": "p50"
+                    }
+                  ],
+                  "notices": []
+                }
+                """;
+    }
+
+    private static final class CapturingMailGateway implements MailGateway {
+
+        final List<String[]> sent = new ArrayList<>();
+
+        @Override
+        public boolean enabled() {
+            return true;
+        }
+
+        @Override
+        public String siteBaseUrl() {
+            return "https://example.test";
+        }
+
+        @Override
+        public boolean send(String to, String subject, String text) {
+            sent.add(new String[]{to, subject, text});
+            return true;
+        }
     }
 
     private static String catalogJson() {

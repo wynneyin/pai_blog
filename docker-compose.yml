@@ -14,6 +14,16 @@ services:
       RELAY_UPSTREAM_URL: ${RELAY_UPSTREAM_URL:-}
       RELAY_UPSTREAM_KEY: ${RELAY_UPSTREAM_KEY:-}
       RELAY_ALLOW_SELF_TOPUP: "false"
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
+      MAIL_STARTTLS: ${MAIL_STARTTLS:-true}
+      MAIL_SSL: ${MAIL_SSL:-false}
+      SITE_BASE_URL: ${SITE_BASE_URL:-https://wynneyin.site}
     volumes:
       - ./articles:/app/articles
       - ./shop:/app/shop:ro

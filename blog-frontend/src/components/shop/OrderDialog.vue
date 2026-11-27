@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { createOrder, payOrder } from "../../api/shop";
 import { rememberOrder } from "../../utils/shopOrders";
+import { paymentLink, paymentNote, resolvePaymentQr } from "../../utils/paymentQr";
 
 const props = defineProps({
   product: { type: Object, required: true },
@@ -36,11 +37,26 @@ const contactPlaceholder = computed(() =>
   isRelayProduct.value ? "与中转站账号一致的邮箱" : "手机号或邮箱"
 );
 
-const qrSrc = computed(() => {
+const configuredQr = computed(() => {
   const key = method.value === "alipay" ? "alipayQr" : "wechatQr";
   const value = props.payment ? props.payment[key] : "";
   return typeof value === "string" ? value.trim() : "";
 });
+
+const methodLink = computed(() => paymentLink(props.payment, method.value));
+const paymentTip = computed(() => paymentNote(props.payment));
+const qr = ref({ image: "", link: "", generated: false });
+let qrRequest = 0;
+
+watch(
+  [configuredQr, methodLink],
+  async ([image, link]) => {
+    const request = ++qrRequest;
+    const resolved = await resolvePaymentQr({ image, link });
+    if (request === qrRequest) qr.value = resolved;
+  },
+  { immediate: true }
+);
 
 const supportUrl = computed(() =>
   props.payment && typeof props.payment.contactUrl === "string"
@@ -130,7 +146,12 @@ async function confirmPaid() {
     const paid = await payOrder(order.value.orderNo, method.value, {
       lookupToken: order.value.lookupToken || ""
     });
-    order.value = { ...paid, lookupToken: order.value.lookupToken };
+    order.value = {
+      ...paid,
+      lookupToken: order.value.lookupToken,
+      emailQueued: order.value.emailQueued
+    };
+    rememberOrder(order.value);
   } catch (e) {
     payError.value = e.message || "支付确认失败，请稍后重试";
   } finally {
@@ -161,6 +182,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
           </div>
           <button class="shop-dialog__close" type="button" aria-label="关闭" @click="close">×</button>
         </header>
+        <ol class="shop-steps" aria-label="下单进度">
+          <li class="is-active"><span>1</span>填写信息</li>
+          <li><span>2</span>扫码付款</li>
+        </ol>
         <div class="shop-dialog__body">
           <div class="shop-summary">
             <div>
@@ -195,8 +220,11 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
           </label>
           <p v-if="error" class="shop-error">{{ error }}</p>
           <div class="shop-total">
-            <span>应付金额</span>
-            <strong>{{ total }}</strong>
+            <div class="shop-total__label">
+              <span>应付金额</span>
+              <small>¥{{ product.price }} × {{ quantity }}</small>
+            </div>
+            <strong>{{ total.toFixed(2) }}</strong>
           </div>
         </div>
         <div class="shop-dialog__foot">
@@ -215,8 +243,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
           </div>
           <button class="shop-dialog__close" type="button" aria-label="关闭" @click="close">×</button>
         </header>
+        <ol class="shop-steps" aria-label="下单进度">
+          <li class="is-done"><span>✓</span>填写信息</li>
+          <li class="is-active"><span>2</span>扫码付款</li>
+        </ol>
         <div class="shop-dialog__body shop-pay">
-          <p class="shop-pay__amount">{{ order.total }}</p>
+          <p class="shop-pay__amount">{{ Number(order.total).toFixed(2) }}</p>
           <p class="shop-pay__tips">
             <template v-if="isRelayProduct">
               <template v-if="selfPay">
@@ -254,8 +286,11 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
               微信支付
             </button>
           </div>
-          <div v-if="qrSrc" class="shop-qr">
-            <img :src="qrSrc" :alt="method === 'alipay' ? '支付宝收款码' : '微信收款码'" />
+          <div v-if="qr.image" class="shop-qr">
+            <img :src="qr.image" :alt="method === 'alipay' ? '支付宝收款码' : '微信收款码'" />
+            <p v-if="qr.generated" class="shop-qr__hint">
+              使用{{ method === "alipay" ? "支付宝" : "微信" }}扫码付款
+            </p>
           </div>
           <div v-else class="shop-qr shop-qr--manual">
             <span>当前为人工确认收款</span>
@@ -266,6 +301,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
             </span>
             <span v-else>请联系管理员获取收款方式。</span>
           </div>
+          <a
+            v-if="qr.link"
+            class="shop-pay__open"
+            :href="qr.link"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            在{{ method === "alipay" ? "支付宝" : "微信" }}中打开付款 →
+          </a>
+          <p v-if="paymentTip" class="shop-pay__note">{{ paymentTip }}</p>
           <div class="shop-pay__no">
             <span>订单号</span>
             <code>{{ order.orderNo }}</code>
@@ -282,6 +327,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
           </div>
           <p v-if="order.lookupToken" class="shop-hint">
             查询凭证只显示这一次，请保存好。之后查询订单需要它，或登录下单邮箱对应的中转站账号。
+          </p>
+          <p v-if="order.emailQueued" class="shop-hint shop-hint--ok">
+            订单信息已发送至 {{ order.contact }}，也可以直接用邮箱里的查询凭证找回订单。
           </p>
           <p v-if="payError" class="shop-error">{{ payError }}</p>
           <p v-if="order.status === 'paid'" class="shop-paid">
@@ -336,8 +384,33 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 }
 .shop-qr img {
   width: 100%;
-  height: 100%;
+  max-width: 160px;
+  height: auto;
+  aspect-ratio: 1;
   object-fit: contain;
+}
+.shop-qr__hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: #6b7280;
+}
+.shop-pay__open {
+  display: inline-block;
+  margin-top: 12px;
+  color: #1a7f5a;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.shop-pay__open:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.shop-pay__note {
+  margin: 10px 0 0;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.6;
 }
 .shop-qr--manual {
   display: flex;

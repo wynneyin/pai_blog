@@ -1,5 +1,6 @@
 package com.blog.relay;
 
+import com.blog.mail.MailGateway;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
@@ -21,7 +22,11 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -41,6 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class RelayHttpTest {
 
     private static final String PASSWORD = "unit-test-password";
+    private static final String NEW_PASSWORD = PASSWORD + "-v2";
     private static final String ADMIN_TOKEN = "unit-test-admin-token";
     private static final String JSON = MediaType.APPLICATION_JSON_VALUE;
 
@@ -54,6 +60,7 @@ class RelayHttpTest {
     private RelayService service;
     private MockMvc mvc;
     private HttpServer upstream;
+    private final TestMailGateway mail = new TestMailGateway();
 
     @BeforeEach
     void setUp() throws IOException {
@@ -423,6 +430,72 @@ class RelayHttpTest {
         assertEquals(1, usage.path("list").get(0).path("costCents").asInt());
     }
 
+    @Test
+    void forgotPasswordRequiresConfiguredMail() throws Exception {
+        mvc.perform(post("/api/relay/auth/forgot-password")
+                        .contentType(JSON)
+                        .content("{\"email\":\"user@example.com\"}"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.message").value("邮件服务未配置，请联系管理员"));
+    }
+
+    @Test
+    void passwordResetEmailIsSingleUseAndRevokesOldSessions() throws Exception {
+        String oldToken = registerHttp("reset@example.com");
+        mail.enabled = true;
+
+        mvc.perform(post("/api/relay/auth/forgot-password")
+                        .contentType(JSON)
+                        .content("{\"email\":\"reset@example.com\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sent").value(true));
+
+        assertEquals(1, mail.sent.size());
+        Matcher matcher = Pattern.compile("#token=(pr_[0-9a-f]{64})")
+                .matcher(mail.sent.get(0)[2]);
+        assertTrue(matcher.find(), "reset link must carry a token");
+        String resetToken = matcher.group(1);
+
+        mvc.perform(post("/api/relay/auth/reset-password")
+                        .contentType(JSON)
+                        .content("{\"token\":\"" + resetToken
+                                + "\",\"password\":\"" + NEW_PASSWORD + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.reset").value(true));
+
+        mvc.perform(get("/api/relay/me").header("Authorization", "Bearer " + oldToken))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(post("/api/relay/auth/login")
+                        .contentType(JSON)
+                        .content("{\"email\":\"reset@example.com\",\"password\":\"" + PASSWORD + "\"}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/relay/auth/login")
+                        .contentType(JSON)
+                        .content("{\"email\":\"reset@example.com\",\"password\":\"" + NEW_PASSWORD + "\"}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(post("/api/relay/auth/reset-password")
+                        .contentType(JSON)
+                        .content("{\"token\":\"" + resetToken
+                                + "\",\"password\":\"" + NEW_PASSWORD + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("重置链接无效或已过期"));
+    }
+
+    @Test
+    void forgotPasswordDoesNotRevealUnknownAddresses() throws Exception {
+        mail.enabled = true;
+
+        mvc.perform(post("/api/relay/auth/forgot-password")
+                        .contentType(JSON)
+                        .content("{\"email\":\"nobody@example.com\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sent").value(true));
+
+        assertTrue(mail.sent.isEmpty());
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
@@ -431,12 +504,35 @@ class RelayHttpTest {
         RelayAdminController adminController = new RelayAdminController(service);
         ReflectionTestUtils.setField(adminController, "adminToken", ADMIN_TOKEN);
         return MockMvcBuilders.standaloneSetup(
-                        new RelayController(service),
+                        new RelayController(service, mail),
                         adminController,
                         new RelayProxyController(service, objectMapper, upstreamUrl, upstreamKey))
                 .setControllerAdvice(new RelayExceptionHandler())
                 .addFilters(new RelayBodySizeLimitFilter(objectMapper))
                 .build();
+    }
+
+    static final class TestMailGateway implements MailGateway {
+
+        boolean enabled;
+        String siteBaseUrl = "https://example.test";
+        final List<String[]> sent = new ArrayList<>();
+
+        @Override
+        public boolean enabled() {
+            return enabled;
+        }
+
+        @Override
+        public String siteBaseUrl() {
+            return siteBaseUrl;
+        }
+
+        @Override
+        public boolean send(String to, String subject, String text) {
+            sent.add(new String[]{to, subject, text});
+            return true;
+        }
     }
 
     private String registerHttp(String email) throws Exception {
