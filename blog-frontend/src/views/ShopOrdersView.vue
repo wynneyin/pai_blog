@@ -2,9 +2,12 @@
 import { onMounted, ref } from "vue";
 import dayjs from "dayjs";
 import { fetchCatalog, fetchOrder, payOrder } from "../api/shop";
-import { loadRecentOrders, STATUS_TEXT } from "../utils/shopOrders";
+import { loadRelaySession } from "../api/relay";
+import { loadRecentOrders, rememberOrder, STATUS_TEXT } from "../utils/shopOrders";
 
 const orderNo = ref("");
+const lookupToken = ref("");
+const relayLoggedIn = ref(false);
 const result = ref(null);
 const searched = ref(false);
 const loading = ref(false);
@@ -16,6 +19,7 @@ const supportUrl = ref("");
 const supportLabel = ref("管理员");
 
 onMounted(async () => {
+  relayLoggedIn.value = Boolean(loadRelaySession()?.token);
   try {
     const catalog = await fetchCatalog();
     selfPay.value = catalog.allowSelfPay !== false;
@@ -37,7 +41,9 @@ async function search() {
   loading.value = true;
   error.value = "";
   try {
-    result.value = await fetchOrder(key);
+    const found = await fetchOrder(key, { lookupToken: lookupToken.value.trim() });
+    result.value = found;
+    rememberOrder({ ...found, lookupToken: lookupToken.value.trim() || found.lookupToken });
   } catch (e) {
     result.value = null;
     error.value = e.message || "订单查询失败";
@@ -48,8 +54,9 @@ async function search() {
   }
 }
 
-function pick(no) {
-  orderNo.value = no;
+function pick(item) {
+  orderNo.value = item.orderNo;
+  lookupToken.value = item.lookupToken || "";
   search();
 }
 
@@ -58,7 +65,9 @@ async function confirmPaid() {
   paying.value = true;
   error.value = "";
   try {
-    result.value = await payOrder(result.value.orderNo, "alipay");
+    result.value = await payOrder(result.value.orderNo, result.value.paymentMethod || "", {
+      lookupToken: lookupToken.value.trim()
+    });
   } catch (e) {
     error.value = e.message || "支付确认失败";
   } finally {
@@ -81,7 +90,7 @@ function formatCents(value) {
     <header class="shop-page-head">
       <p class="shop-kicker">Orders</p>
       <h1>订单查询</h1>
-      <p>输入下单后生成的订单号，查看支付状态与商品信息。</p>
+      <p>输入下单后生成的订单号和查询凭证，查看支付状态与商品信息。</p>
     </header>
 
     <form class="shop-lookup" @submit.prevent="search">
@@ -92,14 +101,30 @@ function formatCents(value) {
         placeholder="例如 PB20261126143022ABCD"
         aria-label="订单号"
       />
+      <input
+        v-model="lookupToken"
+        class="shop-lookup__input"
+        type="text"
+        placeholder="查询凭证（已登录中转站可留空）"
+        aria-label="查询凭证"
+        autocomplete="off"
+      />
       <button class="shop-btn" type="submit" :disabled="loading">
         {{ loading ? "查询中…" : "查询订单" }}
       </button>
     </form>
+    <p class="shop-hint">
+      <template v-if="relayLoggedIn">
+        已检测到中转站登录，可留空凭证查询本账号的订单；订单属于其他账号时仍需查询凭证。
+      </template>
+      <template v-else>
+        查询凭证在下单成功时显示一次，只保存在本机；换设备查询请使用下单邮箱对应的中转站账号登录。
+      </template>
+    </p>
 
     <p v-if="error" class="shop-error">{{ error }}</p>
     <p v-else-if="searched && !result && !loading" class="shop-error">
-      没有找到该订单，请核对订单号是否完整。
+      没有找到该订单，请核对订单号和查询凭证是否正确。
     </p>
 
     <section v-if="result" class="shop-panel shop-result" aria-live="polite">
@@ -142,27 +167,35 @@ function formatCents(value) {
           <dd>{{ result.note || "—" }}</dd>
         </div>
       </dl>
-      <button
-        v-if="result.status === 'pending' && selfPay"
-        class="shop-btn"
-        style="margin-top: 16px"
-        type="button"
-        :disabled="paying"
-        @click="confirmPaid"
-      >
-        {{ paying ? "确认中…" : "我已完成转账" }}
-      </button>
-      <a
-        v-else-if="result.status === 'pending' && supportUrl"
-        class="shop-btn"
-        style="margin-top: 16px"
-        :href="supportUrl"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        联系{{ supportLabel }}确认
-      </a>
-      <p v-else-if="result.status === 'pending'" class="shop-hint" style="margin-top: 10px">
+      <div style="margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px">
+        <button
+          class="shop-btn shop-btn--ghost"
+          type="button"
+          :disabled="loading"
+          @click="search"
+        >
+          {{ loading ? "刷新中…" : "刷新状态" }}
+        </button>
+        <button
+          v-if="result.status === 'pending' && selfPay"
+          class="shop-btn"
+          type="button"
+          :disabled="paying"
+          @click="confirmPaid"
+        >
+          {{ paying ? "确认中…" : "我已完成转账" }}
+        </button>
+        <a
+          v-else-if="result.status === 'pending' && supportUrl"
+          class="shop-btn"
+          :href="supportUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          联系{{ supportLabel }}确认
+        </a>
+      </div>
+      <p v-if="result.status === 'pending' && !selfPay && !supportUrl" class="shop-hint" style="margin-top: 10px">
         完成转账后，请携带订单号联系管理员确认到账。
       </p>
       <p v-if="result.relayPlanId" class="shop-hint" style="margin-top: 10px">
@@ -174,7 +207,7 @@ function formatCents(value) {
       <h2>本机最近订单</h2>
       <ul class="shop-recent__list">
         <li v-for="item in recent" :key="item.orderNo">
-          <button class="shop-recent__btn" type="button" @click="pick(item.orderNo)">
+          <button class="shop-recent__btn" type="button" @click="pick(item)">
             <span class="shop-recent__no">{{ item.orderNo }}</span>
             <span class="shop-recent__meta">
               {{ item.productName }} · ¥{{ item.total }}

@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
 const { StringDecoder } = require('string_decoder');
+const { clientIp } = require('./client-ip');
 
 // Relay store layout and business rules follow shop/relay-API.md. Every value
 // that leaves this module goes through one of the public mappers below so
@@ -133,8 +134,14 @@ function limitFrom(raw, fallback, max) {
   return Math.min(parsed, max);
 }
 
-function bearerToken(req) {
-  const header = req.get('authorization') || '';
+// Accepts either an Express request or a raw Authorization header value, so
+// callers that already extracted the header (e.g. the shop) need not rebuild a
+// request object just to resolve the session.
+function bearerToken(reqOrHeader) {
+  const header =
+    typeof reqOrHeader === 'string'
+      ? reqOrHeader
+      : (reqOrHeader && typeof reqOrHeader.get === 'function' ? reqOrHeader.get('authorization') : '') || '';
   const match = /^Bearer\s+(.+)$/i.exec(String(header).trim());
   return match ? match[1].trim() : '';
 }
@@ -426,10 +433,6 @@ function activeSessionUser(store, token) {
 // ---------------------------------------------------------------------------
 
 const authRateBuckets = new Map();
-
-function clientIp(req) {
-  return req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
-}
 
 function sweepAuthBuckets(now) {
   if (authRateBuckets.size < 5000) return;
@@ -1362,11 +1365,23 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function relayUserExists(email) {
+function relayUserId(email) {
   const normalized = normalizeEmail(email);
-  if (!isValidEmail(normalized)) return false;
+  if (!isValidEmail(normalized)) return null;
   const store = readStore();
-  return store.users.some((user) => user && normalizeEmail(user.email) === normalized);
+  const user = store.users.find(
+    (item) => item && normalizeEmail(item.email) === normalized
+  );
+  return user ? user.id : null;
+}
+
+function relayUserExists(email) {
+  return relayUserId(email) !== null;
+}
+
+function relayUserIdForAuthorization(authorization) {
+  const found = activeSessionUser(readStore(), bearerToken(authorization));
+  return found ? found.user.id : null;
 }
 
 function shopCreditCents(planId, quantity) {
@@ -1445,6 +1460,8 @@ module.exports = {
   relayAdminRouter,
   relayProxyRouter,
   relayUserExists,
+  relayUserId,
+  relayUserIdForAuthorization,
   shopCreditCents,
   creditShopOrder
 };

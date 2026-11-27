@@ -25,11 +25,31 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/shop/catalog` | 商品目录 |
-| POST | `/api/shop/orders` | 下单，body `{productId, quantity, contact, note}` |
-| GET | `/api/shop/orders/{orderNo}` | 查询订单 |
-| POST | `/api/shop/orders/{orderNo}/pay` | 确认支付（幂等），body `{method}` |
+| POST | `/api/shop/orders` | 下单，body `{productId, quantity, contact, note}`；响应含一次性 `lookupToken` |
+| GET | `/api/shop/orders/{orderNo}` | 查询订单，需要查询凭证或绑定账户的 Bearer |
+| POST | `/api/shop/orders/{orderNo}/pay` | 确认支付（幂等），body `{method}`，鉴权同上 |
 | GET | `/api/admin/shop/orders?status=&limit=` | 后台订单列表，需要 `X-Admin-Token` |
 | POST | `/api/admin/shop/orders/{orderNo}/status` | 后台改状态 `{status}` |
+
+- 下单成功会在响应里返回一次性查询凭证 `lookupToken`（`so_` 加 64 位十六进制）。
+  服务端只保存它的 SHA-256 哈希（`lookupTokenHash`），之后任何接口、后台列表都不会
+  再返回明文；前端只把凭证保存在买家本机。凭证丢失时，可登录下单邮箱对应的中转站账号查询。
+- 查询与支付订单必须二选一鉴权：
+  - 请求头 `X-Order-Token: <lookupToken>`；或
+  - 请求头 `Authorization: Bearer <中转站会话令牌>`，且会话账号就是下单时绑定的
+    中转站账户（订单里的 `relayUserId`）。
+  未携带凭证、凭证错误、订单不存在、订单不属于该账户，统一返回 404「订单不存在」，
+  不区分具体原因，避免被用来枚举订单号。非中转商品的订单没有绑定账户，只能凭查询凭证访问。
+  后台订单列表与状态变更响应同样会去掉 `lookupTokenHash`，凭证哈希永远不会离开后端。
+- 限流按客户端 IP 计数，60 秒固定窗口：下单 10 次、查询 30 次、支付 10 次、
+  商品目录 120 次、后台接口 60 次；超出返回 429「请求过于频繁，请稍后再试」并带
+  `Retry-After`。只有当直连对端是回环、站点内网或链路本地地址时才采信
+  `X-Forwarded-For`，并且从右往左跳过可信代理取第一个非代理地址——nginx 会把
+  真实客户端追加在右侧，公网客户端伪造左侧条目不会改变限流桶。HEAD 与 GET
+  共用额度，OPTIONS 预检不计入；路径匹配会忽略 Servlet 矩阵参数（`;`）。
+- 限流窗口表有容量上限（Java 20,000 个键的 LRU；Node 20,000 个键后淘汰最旧），
+  避免轮换地址把内存撑爆。
+- 商城请求体与中转站接口共用 100 KiB 上限，超出返回 413，不会先读入内存再拒绝。
 
 - 价格、金额、订单号全部由服务端计算与生成，前端传的价格不生效。
 - 目录响应里每个商品带 `availableStock`：`stock` 减去未取消订单

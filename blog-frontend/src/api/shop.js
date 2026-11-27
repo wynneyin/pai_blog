@@ -1,4 +1,18 @@
 import api from "./client";
+import { loadRelaySession } from "./relay";
+
+// 订单查询/支付需要凭证：下单时返回的 lookupToken，或已登录的中转站账号。
+function orderHeaders(lookupToken) {
+  const headers = {};
+  const session = loadRelaySession();
+  if (session?.token) {
+    headers.Authorization = `Bearer ${session.token}`;
+  }
+  if (lookupToken) {
+    headers["X-Order-Token"] = lookupToken;
+  }
+  return headers;
+}
 
 // Java 后端返回 {code, message, data}，Node 后端返回 {success, data, message}，
 // 这里统一成 data，并把业务错误转成 Error。
@@ -26,13 +40,21 @@ export async function createOrder(payload) {
   return unwrap(await api.post("/shop/orders", payload));
 }
 
-export async function fetchOrder(orderNo) {
-  return unwrap(await api.get(`/shop/orders/${encodeURIComponent(orderNo)}`));
+export async function fetchOrder(orderNo, { lookupToken = "" } = {}) {
+  return unwrap(
+    await api.get(`/shop/orders/${encodeURIComponent(orderNo)}`, {
+      headers: orderHeaders(lookupToken)
+    })
+  );
 }
 
-export async function payOrder(orderNo, method) {
+export async function payOrder(orderNo, method, { lookupToken = "" } = {}) {
   return unwrap(
-    await api.post(`/shop/orders/${encodeURIComponent(orderNo)}/pay`, { method })
+    await api.post(
+      `/shop/orders/${encodeURIComponent(orderNo)}/pay`,
+      { method },
+      { headers: orderHeaders(lookupToken) }
+    )
   );
 }
 

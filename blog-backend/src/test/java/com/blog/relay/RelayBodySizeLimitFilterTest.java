@@ -105,9 +105,39 @@ class RelayBodySizeLimitFilterTest {
     }
 
     @Test
+    void capsShopBodiesToo() throws Exception {
+        MockHttpServletRequest request =
+                new MockHttpServletRequest("POST", "/api/shop/orders");
+        request.setContentType("application/json");
+        request.setContent(new byte[RelayBodySizeLimitFilter.MAX_BODY_BYTES + 1]);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean invoked = new AtomicBoolean();
+
+        filter.doFilter(request, response, recordingChain(invoked, new AtomicReference<>()));
+
+        assertFalse(invoked.get(), "shop bodies share the relay size cap");
+        assertEquals(413, response.getStatus());
+    }
+
+    @Test
+    void capsMatrixParameterVariants() throws Exception {
+        MockHttpServletRequest request =
+                new MockHttpServletRequest("POST", "/api/shop;x=1/orders");
+        request.setContentType("application/json");
+        request.setContent(new byte[RelayBodySizeLimitFilter.MAX_BODY_BYTES + 1]);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean invoked = new AtomicBoolean();
+
+        filter.doFilter(request, response, recordingChain(invoked, new AtomicReference<>()));
+
+        assertFalse(invoked.get(), "matrix parameters must not skip the body cap");
+        assertEquals(413, response.getStatus());
+    }
+
+    @Test
     void leavesNonRelayPathsUntouched() throws Exception {
         byte[] payload = new byte[RelayBodySizeLimitFilter.MAX_BODY_BYTES + 1];
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/shop/orders");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/articles");
         request.setContent(payload);
         MockHttpServletResponse response = new MockHttpServletResponse();
         AtomicBoolean invoked = new AtomicBoolean();

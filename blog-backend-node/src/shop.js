@@ -2,7 +2,13 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { relayUserExists, shopCreditCents, creditShopOrder } = require('./relay');
+const {
+  relayUserId: relayAccountId,
+  relayUserIdForAuthorization,
+  shopCreditCents,
+  creditShopOrder
+} = require('./relay');
+const { clientIp } = require('./client-ip');
 
 const ORDER_STATUSES = ['pending', 'paid', 'delivered', 'cancelled'];
 // Every order except a cancelled one consumes stock: pending/paid reserve it,
@@ -143,6 +149,94 @@ function usedQuantity(orders, productId) {
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const LOOKUP_TOKEN_PREFIX = 'so_';
+
+function newLookupToken() {
+  return LOOKUP_TOKEN_PREFIX + crypto.randomBytes(32).toString('hex');
+}
+
+function sha256Hex(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function tokenHashMatches(storedHash, presentedToken) {
+  if (typeof storedHash !== 'string' || !storedHash) return false;
+  if (typeof presentedToken !== 'string' || !presentedToken.trim()) return false;
+  const left = Buffer.from(storedHash, 'utf8');
+  const right = Buffer.from(sha256Hex(presentedToken.trim()), 'utf8');
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+// A buyer may prove access with the one-time order credential or with the
+// relay login that owns the fulfillment email. Missing and unauthorized orders
+// intentionally share the same 404 so order numbers cannot be enumerated.
+function canAccess(order, req) {
+  if (!order) return false;
+  if (tokenHashMatches(order.lookupTokenHash, req.get('x-order-token'))) {
+    return true;
+  }
+  if (order.relayUserId) {
+    const userId = relayUserIdForAuthorization(req.get('authorization'));
+    if (userId && userId === order.relayUserId) return true;
+  }
+  return false;
+}
+
+function publicOrder(order) {
+  if (!order || typeof order !== 'object') return order;
+  const { lookupTokenHash, ...safe } = order;
+  return safe;
+}
+
+// ---------------------------------------------------------------------------
+// Per-client rate limiting
+// ---------------------------------------------------------------------------
+
+const RATE_WINDOW_MS = 60 * 1000;
+const MAX_RATE_BUCKETS = 20000;
+const RATE_LIMITS = {
+  create: 10,
+  lookup: 30,
+  pay: 10,
+  catalog: 120,
+  admin: 60
+};
+const rateBuckets = new Map();
+
+function sweepRateBuckets(now) {
+  if (rateBuckets.size < MAX_RATE_BUCKETS) return;
+  for (const [key, bucket] of rateBuckets) {
+    if (now - bucket.start >= RATE_WINDOW_MS) rateBuckets.delete(key);
+  }
+  // Map iterates in insertion order, so drop the oldest live buckets if the
+  // table is still full. The cap is a memory guard, not a limit on clients.
+  for (const key of rateBuckets.keys()) {
+    if (rateBuckets.size < MAX_RATE_BUCKETS) break;
+    rateBuckets.delete(key);
+  }
+}
+
+function rateLimit(kind) {
+  const max = RATE_LIMITS[kind];
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = `${kind}|${clientIp(req)}`;
+    let bucket = rateBuckets.get(key);
+    if (!bucket || now - bucket.start >= RATE_WINDOW_MS) {
+      bucket = { start: now, count: 0 };
+      rateBuckets.set(key, bucket);
+      sweepRateBuckets(now);
+    }
+    bucket.count += 1;
+    if (bucket.count > max) {
+      const retryAfter = Math.max(1, Math.ceil((bucket.start + RATE_WINDOW_MS - now) / 1000));
+      res.set('Retry-After', String(retryAfter));
+      res.set('Cache-Control', 'no-store');
+      return res.status(429).json(fail(429, '请求过于频繁，请稍后再试'));
+    }
+    return next();
+  };
+}
 
 // Credit the relay account behind an order exactly once. The relay side keeps
 // a deterministic SHOP-<orderNo> top-up, so a retry after a partial failure
@@ -234,6 +328,7 @@ function handle(fn) {
 
 function routerErrorHandler(err, _req, res, next) {
   if (res.headersSent) return next(err);
+  if (!(err instanceof HttpError)) console.error(err && err.stack);
   const status = err && Number.isInteger(err.status) ? err.status : 500;
   const message = err && err.message ? err.message : '服务器内部错误';
   res.status(status).json(fail(status, message));
@@ -244,6 +339,7 @@ const adminRouter = express.Router();
 
 shopRouter.get(
   '/catalog',
+  rateLimit('catalog'),
   handle((_req, res) => {
     const catalog = readCatalog();
     res.json(ok({
@@ -255,6 +351,7 @@ shopRouter.get(
 
 shopRouter.post(
   '/orders',
+  rateLimit('create'),
   handle((req, res) => {
     const body = bodyOf(req);
 
@@ -294,12 +391,14 @@ shopRouter.post(
       typeof product.relayPlanId === 'string' ? product.relayPlanId.trim() : '';
     let normalizedContact = contact;
     let relayCreditCents = 0;
+    let ownerUserId = null;
     if (relayPlanId) {
       normalizedContact = contact.toLowerCase();
       if (!EMAIL_RE.test(normalizedContact)) {
         throw httpError(400, '请填写中转站注册邮箱');
       }
-      if (!relayUserExists(normalizedContact)) {
+      ownerUserId = relayAccountId(normalizedContact);
+      if (!ownerUserId) {
         throw httpError(400, '该邮箱尚未注册中转站，请先注册');
       }
       relayCreditCents = shopCreditCents(relayPlanId, quantity);
@@ -313,6 +412,7 @@ shopRouter.post(
     }
 
     const orderNo = generateOrderNo(orders);
+    const lookupToken = newLookupToken();
     const order = {
       orderNo,
       productId: product.id,
@@ -324,27 +424,33 @@ shopRouter.post(
       note,
       status: 'pending',
       createdAt: new Date().toISOString(),
+      lookupTokenHash: sha256Hex(lookupToken),
+      ...(ownerUserId ? { relayUserId: ownerUserId } : {}),
       ...(relayPlanId ? { relayPlanId, relayCreditCents } : {})
     };
 
     orders.push(order);
     writeOrders(orders);
-    res.json(ok(order));
+    res.json(ok({ ...publicOrder(order), lookupToken }));
   })
 );
 
 shopRouter.get(
   '/orders/:orderNo',
+  rateLimit('lookup'),
   handle((req, res) => {
     const orders = readOrders();
     const index = findOrderIndex(orders, req.params.orderNo);
-    if (index === -1) throw httpError(404, '订单不存在');
-    res.json(ok(orders[index]));
+    if (index === -1 || !canAccess(orders[index], req)) {
+      throw httpError(404, '订单不存在');
+    }
+    res.json(ok(publicOrder(orders[index])));
   })
 );
 
 shopRouter.post(
   '/orders/:orderNo/pay',
+  rateLimit('pay'),
   handle((req, res) => {
     if (process.env.SHOP_ALLOW_SELF_PAY === 'false') {
       throw httpError(403, '请支付后联系管理员确认到账');
@@ -354,13 +460,15 @@ shopRouter.post(
 
     const orders = readOrders();
     const index = findOrderIndex(orders, req.params.orderNo);
-    if (index === -1) throw httpError(404, '订单不存在');
+    if (index === -1 || !canAccess(orders[index], req)) {
+      throw httpError(404, '订单不存在');
+    }
 
     const order = orders[index];
     if (order.status === 'paid' || order.status === 'delivered') {
       // Paying twice is a no-op and must not rewrite paidAt/paymentMethod.
       if (ensureRelayCredit(order)) writeOrders(orders);
-      return res.json(ok(order));
+      return res.json(ok(publicOrder(order)));
     }
     if (order.status === 'cancelled') {
       throw httpError(409, '订单已取消');
@@ -372,7 +480,7 @@ shopRouter.post(
     ensureRelayCredit(order);
 
     writeOrders(orders);
-    res.json(ok(order));
+    res.json(ok(publicOrder(order)));
   })
 );
 
@@ -391,6 +499,7 @@ function createdAtMs(order) {
 
 adminRouter.get(
   '/orders',
+  rateLimit('admin'),
   adminOnly,
   handle((req, res) => {
     const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
@@ -401,12 +510,13 @@ adminRouter.get(
     const matching = status ? orders.filter((order) => order && order.status === status) : orders.slice();
     matching.sort((a, b) => createdAtMs(b) - createdAtMs(a));
 
-    res.json(ok({ list: matching.slice(0, limit), total: matching.length }));
+    res.json(ok({ list: matching.slice(0, limit).map(publicOrder), total: matching.length }));
   })
 );
 
 adminRouter.post(
   '/orders/:orderNo/status',
+  rateLimit('admin'),
   adminOnly,
   handle((req, res) => {
     const body = bodyOf(req);
@@ -442,7 +552,7 @@ adminRouter.post(
     }
 
     writeOrders(orders);
-    res.json(ok(order));
+    res.json(ok(publicOrder(order)));
   })
 );
 

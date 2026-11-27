@@ -656,12 +656,18 @@ public class RelayService {
      * registered yet.
      */
     public boolean relayUserExists(String email) {
+        return relayUserId(email) != null;
+    }
+
+    /** Relay user id for an email, or null when the account does not exist. */
+    public String relayUserId(String email) {
         String normalized = normalizeEmail(email);
         if (!isValidEmail(normalized)) {
-            return false;
+            return null;
         }
         synchronized (storeLock) {
-            return findUserByEmail(readStore(), normalized) != null;
+            RelayUser user = findUserByEmail(readStore(), normalized);
+            return user == null ? null : user.getId();
         }
     }
 

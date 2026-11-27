@@ -19,6 +19,7 @@ const error = ref("");
 const order = ref(null);
 const method = ref("alipay");
 const copied = ref(false);
+const tokenCopied = ref(false);
 const submitting = ref(false);
 const paying = ref(false);
 const payError = ref("");
@@ -110,12 +111,26 @@ async function copyOrderNo() {
   }
 }
 
+async function copyLookupToken() {
+  if (!order.value?.lookupToken) return;
+  try {
+    await navigator.clipboard.writeText(order.value.lookupToken);
+    tokenCopied.value = true;
+    setTimeout(() => (tokenCopied.value = false), 1600);
+  } catch {
+    tokenCopied.value = false;
+  }
+}
+
 async function confirmPaid() {
   if (!order.value || order.value.status !== "pending") return;
   payError.value = "";
   paying.value = true;
   try {
-    order.value = await payOrder(order.value.orderNo, method.value);
+    const paid = await payOrder(order.value.orderNo, method.value, {
+      lookupToken: order.value.lookupToken || ""
+    });
+    order.value = { ...paid, lookupToken: order.value.lookupToken };
   } catch (e) {
     payError.value = e.message || "支付确认失败，请稍后重试";
   } finally {
@@ -258,6 +273,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
               {{ copied ? "已复制" : "复制" }}
             </button>
           </div>
+          <div v-if="order.lookupToken" class="shop-pay__no">
+            <span>查询凭证</span>
+            <code class="shop-pay__token">{{ order.lookupToken }}</code>
+            <button class="shop-copy" type="button" @click="copyLookupToken">
+              {{ tokenCopied ? "已复制" : "复制" }}
+            </button>
+          </div>
+          <p v-if="order.lookupToken" class="shop-hint">
+            查询凭证只显示这一次，请保存好。之后查询订单需要它，或登录下单邮箱对应的中转站账号。
+          </p>
           <p v-if="payError" class="shop-error">{{ payError }}</p>
           <p v-if="order.status === 'paid'" class="shop-paid">
             <template v-if="order.relayCreditedAt">
@@ -334,5 +359,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
   align-self: center;
   color: #6b7280;
   font-size: 13px;
+}
+.shop-pay__token {
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 </style>

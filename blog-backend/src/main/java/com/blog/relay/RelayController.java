@@ -1,6 +1,7 @@
 package com.blog.relay;
 
 import com.blog.dto.ApiResponse;
+import com.blog.web.ClientIp;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -39,7 +40,7 @@ public class RelayController {
         return ResponseEntity.ok(ApiResponse.success(relayService.register(
                 textField(body, "email"),
                 textField(body, "password"),
-                request.getRemoteAddr())));
+                ClientIp.resolve(request))));
     }
 
     @PostMapping("/auth/login")
@@ -49,7 +50,7 @@ public class RelayController {
         return ResponseEntity.ok(ApiResponse.success(relayService.login(
                 textField(body, "email"),
                 textField(body, "password"),
-                request.getRemoteAddr())));
+                ClientIp.resolve(request))));
     }
 
     @PostMapping("/auth/logout")

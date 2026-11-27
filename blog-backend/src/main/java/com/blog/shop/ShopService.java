@@ -4,6 +4,7 @@ import com.blog.relay.RelayException;
 import com.blog.relay.RelayService;
 import com.blog.relay.RelayTopup;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -22,12 +23,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -57,6 +62,10 @@ public class ShopService {
     private static final int ORDER_NO_RETRY_LIMIT = 100;
     private static final int DEFAULT_ORDER_LIMIT = 100;
     private static final int MAX_ORDER_LIMIT = 500;
+
+    private static final String LOOKUP_TOKEN_PREFIX = "so_";
+    private static final int LOOKUP_TOKEN_BYTES = 32;
+    private static final SecureRandom LOOKUP_TOKEN_RANDOM = new SecureRandom();
 
     private static final Set<String> VALID_STATUSES = Set.of("pending", "paid", "delivered", "cancelled");
     // Every order except a cancelled one consumes stock: pending/paid reserve
@@ -156,7 +165,24 @@ public class ShopService {
     // Orders
     // ------------------------------------------------------------------
 
+    /**
+     * Creates an order and returns the one-time lookup credential alongside the
+     * persisted order fields. The credential is never stored in plaintext.
+     */
+    public Map<String, Object> createOrderResponse(ShopCreateOrderRequest request) {
+        CreatedOrder created = createOrderInternal(request);
+        Map<String, Object> body = objectMapper.convertValue(
+                created.order(), new TypeReference<Map<String, Object>>() {});
+        body.remove("lookupTokenHash");
+        body.put("lookupToken", created.lookupToken());
+        return body;
+    }
+
     public ShopOrder createOrder(ShopCreateOrderRequest request) {
+        return createOrderInternal(request).order();
+    }
+
+    private CreatedOrder createOrderInternal(ShopCreateOrderRequest request) {
         String productId = request == null || request.getProductId() == null
                 ? ""
                 : request.getProductId().trim();
@@ -197,6 +223,7 @@ public class ShopService {
         // relay account. The email is the fulfillment target, not a free-form
         // contact field.
         String relayPlanId = text(product.get("relayPlanId")).trim();
+        String relayUserId = null;
         int relayCreditCents = 0;
         if (!relayPlanId.isEmpty()) {
             if (relayService == null) {
@@ -206,7 +233,8 @@ public class ShopService {
             if (!isEmail(contact)) {
                 throw ShopException.badRequest("请填写中转站注册邮箱");
             }
-            if (!relayService.relayUserExists(contact)) {
+            relayUserId = relayService.relayUserId(contact);
+            if (relayUserId == null) {
                 throw ShopException.badRequest("该邮箱尚未注册中转站，请先注册");
             }
             try {
@@ -215,6 +243,9 @@ public class ShopService {
                 throw new ShopException(e.getStatus(), e.getMessage());
             }
         }
+
+        String lookupToken = LOOKUP_TOKEN_PREFIX + randomHex(LOOKUP_TOKEN_BYTES);
+        String lookupTokenHash = sha256Hex(lookupToken);
 
         synchronized (orderLock) {
             List<ShopOrder> orders = readOrders();
@@ -238,11 +269,13 @@ public class ShopService {
                     .createdAt(nowIso())
                     .relayPlanId(relayPlanId.isEmpty() ? null : relayPlanId)
                     .relayCreditCents(relayPlanId.isEmpty() ? null : relayCreditCents)
+                    .relayUserId(relayUserId)
+                    .lookupTokenHash(lookupTokenHash)
                     .build();
 
             orders.add(order);
             writeOrders(orders);
-            return order;
+            return new CreatedOrder(order, lookupToken);
         }
     }
 
@@ -256,6 +289,20 @@ public class ShopService {
         }
     }
 
+    /**
+     * Returns an order to a buyer who proves access with the one-time lookup
+     * token or with the relay account the order was created for. Missing and
+     * unauthorized orders share the same 404 so the endpoint cannot be used to
+     * enumerate order numbers or email addresses.
+     */
+    public ShopOrder getOrderForBuyer(String orderNo, String authorization, String orderToken) {
+        ShopOrder order = getOrder(orderNo);
+        if (!canAccess(order, authorization, orderToken)) {
+            throw ShopException.notFound("订单不存在");
+        }
+        return publicView(order);
+    }
+
     public ShopOrder payOrder(String orderNo, String method) {
         if (!allowSelfPay) {
             throw ShopException.forbidden("请支付后联系管理员确认到账");
@@ -266,28 +313,47 @@ public class ShopService {
             if (order == null) {
                 throw ShopException.notFound("订单不存在");
             }
+            return payOrderLocked(orders, order, method);
+        }
+    }
 
-            String status = order.getStatus();
-            if ("paid".equals(status) || "delivered".equals(status)) {
-                if (ensureRelayCredit(order)) {
-                    writeOrders(orders);
-                }
-                return order;
+    /** Buyer-facing payment confirmation; requires the same proof as lookup. */
+    public ShopOrder payOrderForBuyer(String orderNo, String method,
+                                      String authorization, String orderToken) {
+        if (!allowSelfPay) {
+            throw ShopException.forbidden("请支付后联系管理员确认到账");
+        }
+        synchronized (orderLock) {
+            List<ShopOrder> orders = readOrders();
+            ShopOrder order = findOrder(orders, orderNo);
+            if (order == null || !canAccess(order, authorization, orderToken)) {
+                throw ShopException.notFound("订单不存在");
             }
-            if ("cancelled".equals(status)) {
-                throw ShopException.conflict("订单已取消");
-            }
+            return publicView(payOrderLocked(orders, order, method));
+        }
+    }
 
-            order.setStatus("paid");
-            order.setPaidAt(nowIso());
-            String normalizedMethod = method == null ? "" : method.trim();
-            if (VALID_PAYMENT_METHODS.contains(normalizedMethod)) {
-                order.setPaymentMethod(normalizedMethod);
+    private ShopOrder payOrderLocked(List<ShopOrder> orders, ShopOrder order, String method) {
+        String status = order.getStatus();
+        if ("paid".equals(status) || "delivered".equals(status)) {
+            if (ensureRelayCredit(order)) {
+                writeOrders(orders);
             }
-            ensureRelayCredit(order);
-            writeOrders(orders);
             return order;
         }
+        if ("cancelled".equals(status)) {
+            throw ShopException.conflict("订单已取消");
+        }
+
+        order.setStatus("paid");
+        order.setPaidAt(nowIso());
+        String normalizedMethod = method == null ? "" : method.trim();
+        if (VALID_PAYMENT_METHODS.contains(normalizedMethod)) {
+            order.setPaymentMethod(normalizedMethod);
+        }
+        ensureRelayCredit(order);
+        writeOrders(orders);
+        return order;
     }
 
     public ShopOrderListResponse listOrders(String status, int limit) {
@@ -311,7 +377,7 @@ public class ShopService {
                     : matching;
 
             return ShopOrderListResponse.builder()
-                    .list(list)
+                    .list(list.stream().map(this::publicView).toList())
                     .total(matching.size())
                     .build();
         }
@@ -385,7 +451,7 @@ public class ShopService {
                 ensureRelayCredit(order);
             }
             writeOrders(orders);
-            return order;
+            return publicView(order);
         }
     }
 
@@ -485,6 +551,71 @@ public class ShopService {
 
     private static boolean isEmail(String value) {
         return value != null && value.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+    }
+
+    /**
+     * A buyer may prove access either with the order credential issued at
+     * checkout or with the relay login that owns the fulfillment email.
+     */
+    private boolean canAccess(ShopOrder order, String authorization, String orderToken) {
+        if (order == null) {
+            return false;
+        }
+        String storedHash = order.getLookupTokenHash();
+        if (storedHash != null && !storedHash.isBlank()
+                && orderToken != null && !orderToken.isBlank()
+                && constantTimeEquals(storedHash, sha256Hex(orderToken.trim()))) {
+            return true;
+        }
+        // A wrong or stale X-Order-Token must not hide a valid relay session.
+        if (order.getRelayUserId() != null && !order.getRelayUserId().isBlank()
+                && authorization != null && !authorization.isBlank()
+                && relayService != null) {
+            try {
+                Map<String, Object> me = relayService.me(authorization);
+                Object user = me.get("user");
+                if (user instanceof Map<?, ?> map) {
+                    return order.getRelayUserId().equals(map.get("id"));
+                }
+            } catch (RelayException ignored) {
+                // Invalid relay sessions simply fail the lookup.
+            }
+        }
+        return false;
+    }
+
+    /** Strips the stored credential hash before an order leaves the backend. */
+    private ShopOrder publicView(ShopOrder order) {
+        if (order == null) {
+            return null;
+        }
+        ShopOrder copy = objectMapper.convertValue(order, ShopOrder.class);
+        copy.setLookupTokenHash(null);
+        return copy;
+    }
+
+    private static String randomHex(int bytes) {
+        byte[] value = new byte[bytes];
+        LOOKUP_TOKEN_RANDOM.nextBytes(value);
+        return HexFormat.of().formatHex(value);
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 不可用", e);
+        }
+    }
+
+    private static boolean constantTimeEquals(String left, String right) {
+        if (left == null || right == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                left.getBytes(StandardCharsets.UTF_8),
+                right.getBytes(StandardCharsets.UTF_8));
     }
 
     private BigDecimal extractUnitPrice(JsonNode product) {
@@ -660,5 +791,8 @@ public class ShopService {
     @JsonIgnoreProperties(ignoreUnknown = true)
     private static class OrdersFile {
         private List<ShopOrder> orders;
+    }
+
+    private record CreatedOrder(ShopOrder order, String lookupToken) {
     }
 }

@@ -21,13 +21,18 @@ export function loadRecentOrders() {
 
 export function rememberOrder(order) {
   if (!order?.orderNo) return;
+  const existingList = loadRecentOrders();
+  const existing = existingList.find((item) => item.orderNo === order.orderNo);
   const entry = {
     orderNo: order.orderNo,
     productName: order.productName || "",
     total: order.total,
-    createdAt: order.createdAt
+    createdAt: order.createdAt,
+    // 查询凭证只在本机保存，用于再次打开订单查询页时免登录查看。
+    // 用中转站登录查询时响应里没有凭证，此时保留本机已有的那份。
+    lookupToken: order.lookupToken || existing?.lookupToken || ""
   };
-  const list = loadRecentOrders().filter((item) => item.orderNo !== entry.orderNo);
+  const list = existingList.filter((item) => item.orderNo !== entry.orderNo);
   list.unshift(entry);
   try {
     localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, MAX_RECENT)));

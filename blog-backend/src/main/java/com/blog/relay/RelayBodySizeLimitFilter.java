@@ -26,17 +26,19 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Caps relay request bodies before Spring's message converters copy them into
- * memory. Authentication, admin-token checks and rate limiting all run inside
- * controller methods, which is too late: without this guard an unauthenticated
- * client could post a multi-hundred-megabyte body to /api/relay/**,
- * /api/admin/relay/** or /v1/** and exhaust the heap.
+ * Caps relay and shop request bodies before Spring's message converters copy
+ * them into memory. Authentication, admin-token checks and rate limiting all run
+ * inside controller methods, which is too late: without this guard an
+ * unauthenticated client could post a multi-hundred-megabyte body to
+ * /api/relay/**, /api/admin/relay/**, /api/shop/** or /v1/** and exhaust the
+ * heap.
  *
  * <p>The limit is 100 KiB, matching the Node backend's express.json default so
  * both implementations accept and reject the same payloads. Requests with a
  * declared Content-Length over the limit are rejected without reading the
  * body; chunked requests are read through a bounded buffer and rejected as
- * soon as they exceed it.</p>
+ * soon as they exceed it. Servlet matrix parameters are ignored when matching
+ * paths, because Spring's PathPattern routes them to the same handler.</p>
  */
 @Component
 public class RelayBodySizeLimitFilter extends OncePerRequestFilter {
@@ -85,7 +87,7 @@ public class RelayBodySizeLimitFilter extends OncePerRequestFilter {
         long declaredLength = request.getContentLengthLong();
         int initialCapacity = declaredLength >= 0 && declaredLength < MAX_BODY_BYTES
                 ? (int) declaredLength
-                : MAX_BODY_BYTES;
+                : READ_BUFFER_BYTES;
         ByteArrayOutputStream buffer = new ByteArrayOutputStream(initialCapacity);
         byte[] chunk = new byte[READ_BUFFER_BYTES];
         ServletInputStream input = request.getInputStream();
@@ -133,7 +135,9 @@ public class RelayBodySizeLimitFilter extends OncePerRequestFilter {
     private static boolean isRelayRequest(String uri) {
         return isOpenAiRequest(uri)
                 || matchesPrefix(uri, "/api/relay")
-                || matchesPrefix(uri, "/api/admin/relay");
+                || matchesPrefix(uri, "/api/admin/relay")
+                || matchesPrefix(uri, "/api/shop")
+                || matchesPrefix(uri, "/api/admin/shop");
     }
 
     private static boolean isOpenAiRequest(String uri) {
@@ -141,7 +145,17 @@ public class RelayBodySizeLimitFilter extends OncePerRequestFilter {
     }
 
     private static boolean matchesPrefix(String uri, String prefix) {
-        return uri != null && (uri.equals(prefix) || uri.startsWith(prefix + "/"));
+        String path = normalizePath(uri);
+        return path != null && (path.equals(prefix) || path.startsWith(prefix + "/"));
+    }
+
+    /** Drops Servlet matrix parameters, which Spring's path matching ignores. */
+    private static String normalizePath(String uri) {
+        if (uri == null) {
+            return null;
+        }
+        String path = uri.replace("%3B", ";").replace("%3b", ";");
+        return path.indexOf(';') < 0 ? path : path.replaceAll(";[^/]*", "");
     }
 
     /**
