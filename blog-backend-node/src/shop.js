@@ -182,10 +182,30 @@ function canAccess(order, req) {
   return false;
 }
 
+// Explicit allowlist: internal fields (lookupTokenHash, relayUserId) must never
+// leave the backend, and a future field is private until it is listed here.
 function publicOrder(order) {
   if (!order || typeof order !== 'object') return order;
-  const { lookupTokenHash, ...safe } = order;
-  return safe;
+  return {
+    orderNo: order.orderNo,
+    productId: order.productId,
+    productName: order.productName,
+    unitPrice: order.unitPrice,
+    quantity: order.quantity,
+    total: order.total,
+    contact: order.contact,
+    note: order.note,
+    status: order.status,
+    createdAt: order.createdAt,
+    paidAt: order.paidAt,
+    paymentMethod: order.paymentMethod,
+    deliveredAt: order.deliveredAt,
+    cancelledAt: order.cancelledAt,
+    relayPlanId: order.relayPlanId,
+    relayCreditCents: order.relayCreditCents,
+    relayCreditedAt: order.relayCreditedAt,
+    relayTopupOrderNo: order.relayTopupOrderNo
+  };
 }
 
 // ---------------------------------------------------------------------------

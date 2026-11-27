@@ -48,9 +48,11 @@ function clientIp(req) {
       : '';
   if (forwarded && isTrustedProxy(remote)) {
     const hops = forwarded.split(',');
+    // nginx appends the address it actually saw, so the rightmost hop is
+    // authoritative; every entry to its left is client-supplied.
     for (let i = hops.length - 1; i >= 0; i -= 1) {
       const candidate = normalizeIp(hops[i]);
-      if (candidate && !isTrustedProxy(candidate)) return candidate;
+      if (candidate) return candidate;
     }
   }
   return remote || 'unknown';

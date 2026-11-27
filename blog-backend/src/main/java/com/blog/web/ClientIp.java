@@ -32,12 +32,13 @@ public final class ClientIp {
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && isTrustedProxy(remote)) {
             String[] hops = forwarded.split(",");
+            // nginx appends the address it actually saw, so the rightmost hop
+            // is authoritative; every entry to its left is client-supplied.
             for (int i = hops.length - 1; i >= 0; i--) {
                 String candidate = canonicalIp(hops[i]);
-                if (candidate.isEmpty() || isTrustedProxy(candidate)) {
-                    continue;
+                if (!candidate.isEmpty()) {
+                    return candidate;
                 }
-                return candidate;
             }
         }
         return remote;

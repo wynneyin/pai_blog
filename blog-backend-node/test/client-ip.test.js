@@ -18,12 +18,12 @@ test('walks X-Forwarded-For right to left behind a proxy', () => {
   assert.equal(clientIp(request('172.18.0.4', '1.1.1.1, 198.51.100.23')), '198.51.100.23');
 });
 
-test('skips trusted proxy hops on the right', () => {
-  assert.equal(clientIp(request('172.18.0.4', '198.51.100.24, 10.0.0.2')), '198.51.100.24');
+test('uses the rightmost hop even when the real client is private', () => {
+  // A LAN client behind the host's nginx is still the appended rightmost hop.
+  assert.equal(clientIp(request('172.18.0.4', '1.1.1.1, 192.168.1.50')), '192.168.1.50');
 });
 
-test('unknown or proxy-only chains fall back to the peer', () => {
-  assert.equal(clientIp(request('172.18.0.4', '10.0.0.1, 10.0.0.2')), '172.18.0.4');
+test('invalid forwarded entries fall back to the peer', () => {
   assert.equal(clientIp(request('172.18.0.4', 'not-an-ip')), '172.18.0.4');
   assert.equal(clientIp({}), 'unknown');
 });

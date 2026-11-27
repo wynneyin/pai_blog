@@ -11,7 +11,8 @@ class ClientIpTest {
     void usesForwardedForOnlyBehindATrustedPeer() {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/shop/catalog");
         request.setRemoteAddr("172.18.0.4");
-        request.addHeader("X-Forwarded-For", " 198.51.100.7 , 10.0.0.2");
+        // nginx appends the address it saw; anything left of it is forged.
+        request.addHeader("X-Forwarded-For", "1.1.1.1, 198.51.100.7");
         assertEquals("198.51.100.7", ClientIp.resolve(request));
 
         request.setRemoteAddr("203.0.113.9");

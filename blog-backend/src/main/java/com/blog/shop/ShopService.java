@@ -172,8 +172,7 @@ public class ShopService {
     public Map<String, Object> createOrderResponse(ShopCreateOrderRequest request) {
         CreatedOrder created = createOrderInternal(request);
         Map<String, Object> body = objectMapper.convertValue(
-                created.order(), new TypeReference<Map<String, Object>>() {});
-        body.remove("lookupTokenHash");
+                publicView(created.order()), new TypeReference<Map<String, Object>>() {});
         body.put("lookupToken", created.lookupToken());
         return body;
     }
@@ -584,14 +583,31 @@ public class ShopService {
         return false;
     }
 
-    /** Strips the stored credential hash before an order leaves the backend. */
+    /** Strips internal fields by building an allowlist view, not a blacklist. */
     private ShopOrder publicView(ShopOrder order) {
         if (order == null) {
             return null;
         }
-        ShopOrder copy = objectMapper.convertValue(order, ShopOrder.class);
-        copy.setLookupTokenHash(null);
-        return copy;
+        return ShopOrder.builder()
+                .orderNo(order.getOrderNo())
+                .productId(order.getProductId())
+                .productName(order.getProductName())
+                .unitPrice(order.getUnitPrice())
+                .quantity(order.getQuantity())
+                .total(order.getTotal())
+                .contact(order.getContact())
+                .note(order.getNote())
+                .status(order.getStatus())
+                .createdAt(order.getCreatedAt())
+                .paidAt(order.getPaidAt())
+                .paymentMethod(order.getPaymentMethod())
+                .deliveredAt(order.getDeliveredAt())
+                .cancelledAt(order.getCancelledAt())
+                .relayPlanId(order.getRelayPlanId())
+                .relayCreditCents(order.getRelayCreditCents())
+                .relayCreditedAt(order.getRelayCreditedAt())
+                .relayTopupOrderNo(order.getRelayTopupOrderNo())
+                .build();
     }
 
     private static String randomHex(int bytes) {

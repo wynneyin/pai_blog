@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.math.BigDecimal;
 
@@ -47,5 +48,6 @@ public class ShopOrder {
     /** Relay account bound at checkout; lets that account query the order. */
     private String relayUserId;
     /** SHA-256 of the one-time lookup token. Never returned by the API. */
+    @ToString.Exclude
     private String lookupTokenHash;
 }
