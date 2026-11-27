@@ -139,7 +139,19 @@ jobs:
             exec 9>/tmp/auto_git_pull_pai_blog.lock
             flock -w 900 9
             test "$(git branch --show-current)" = main
-            git fetch origin main
+            # GitHub's TLS termination occasionally drops HTTP/2 ref
+            # negotiations from this host. Retry over HTTP/1.1 instead of
+            # failing the whole release on a transient network error.
+            fetched=0
+            for attempt in 1 2 3 4 5; do
+              if git -c http.version=HTTP/1.1 fetch origin main; then
+                fetched=1
+                break
+              fi
+              echo "git fetch failed (attempt $attempt); retrying in 5s" >&2
+              sleep 5
+            done
+            test "$fetched" = 1 || { echo 'git fetch failed after retries' >&2; exit 1; }
             if [ "$(git rev-parse origin/main)" != "$DEPLOY_COMMIT" ]; then
               echo 'A newer main commit is available; skipping this outdated release.'
               exit 0
